@@ -1,9 +1,9 @@
-import { store } from "../store.js";
-import { CK_ITEMS } from "../checklist.js";
+import { store } from "./store.js";
+import { CK_ITEMS } from "./checklist.js";
 import {
   I, esc, uid, fmtDate, fmtDateTime, todayKey, iconSpan, emptyBox,
   toast, captureGPS, gpsText, $, $$
-} from "../ui.js";
+} from "./ui.js";
 
 let draft = {};
 

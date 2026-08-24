@@ -4,11 +4,11 @@
 import { store } from "./store.js";
 import { can, roleLabel } from "./permissions.js";
 import { I, esc, applyTheme, toggleTheme, toast } from "./ui.js";
-import { renderLogin } from "./views/login.js";
-import { renderConductor } from "./views/conductor.js";
-import { renderPanel } from "./views/panel.js";
-import { renderCamiones } from "./views/camiones.js";
-import { renderUsuarios } from "./views/usuarios.js";
+import { renderLogin } from "./login.js";
+import { renderConductor } from "./conductor.js";
+import { renderPanel } from "./panel.js";
+import { renderCamiones } from "./camiones.js";
+import { renderUsuarios } from "./usuarios.js";
 
 const APP = document.getElementById("app");
 

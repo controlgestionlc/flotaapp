@@ -14,6 +14,34 @@
 <body>
   <div id="app" class="app"></div>
   <noscript>Esta aplicación necesita JavaScript para funcionar.</noscript>
-  <script type="module" src="js/main.js"></script>
+
+  <!-- Muestra en pantalla cualquier error de carga en vez de quedar en blanco -->
+  <script>
+    (function () {
+      function show(msg) {
+        var el = document.getElementById("app");
+        if (!el) return;
+        el.innerHTML =
+          '<div style="max-width:520px;margin:40px auto;padding:0 20px;font-family:system-ui,sans-serif;color:#1B1A17">' +
+          '<h2 style="margin:0 0 10px">No se pudo cargar la app</h2>' +
+          '<p style="color:#7A776E;margin:0 0 12px">Detalle técnico (para diagnóstico):</p>' +
+          '<pre style="white-space:pre-wrap;background:#F3F2EE;border:1px solid #D2CFC5;border-radius:10px;padding:12px;font-size:.82rem;overflow:auto">' +
+          String(msg).replace(/</g, "&lt;") + "</pre></div>";
+      }
+      window.addEventListener("error", function (e) {
+        if (e && e.target && (e.target.tagName === "SCRIPT" || e.target.tagName === "LINK")) {
+          show("No se pudo cargar el archivo: " + (e.target.src || e.target.href) +
+               "\n\nProbablemente ese archivo falta en el repositorio o la ruta no coincide.");
+        } else if (e && e.message) {
+          show(e.message + (e.filename ? "\n" + e.filename + ":" + e.lineno : ""));
+        }
+      }, true);
+      window.addEventListener("unhandledrejection", function (e) {
+        var r = e && e.reason;
+        show((r && (r.message || r)) || "Error desconocido al iniciar.");
+      });
+    })();
+  </script>
+  <script type="module" src="main.js"></script>
 </body>
 </html>

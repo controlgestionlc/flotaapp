@@ -1,7 +1,7 @@
-import { store } from "../store.js";
-import { can } from "../permissions.js";
-import { DOC_TYPES } from "../checklist.js";
-import { I, esc, fmtDate, docStatus, emptyBox, toast, $, $$ } from "../ui.js";
+import { store } from "./store.js";
+import { can } from "./permissions.js";
+import { DOC_TYPES } from "./checklist.js";
+import { I, esc, fmtDate, docStatus, emptyBox, toast, $, $$ } from "./ui.js";
 
 let form = null;
 

@@ -1,6 +1,6 @@
-import { store } from "../store.js";
-import { ROLES, roleLabel } from "../permissions.js";
-import { I, esc, emptyBox, toast, $, $$ } from "../ui.js";
+import { store } from "./store.js";
+import { ROLES, roleLabel } from "./permissions.js";
+import { I, esc, emptyBox, toast, $, $$ } from "./ui.js";
 
 let form = null;
 

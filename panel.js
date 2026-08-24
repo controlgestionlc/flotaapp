@@ -1,10 +1,10 @@
-import { store } from "../store.js";
-import { can } from "../permissions.js";
-import { DOC_TYPES } from "../checklist.js";
+import { store } from "./store.js";
+import { can } from "./permissions.js";
+import { DOC_TYPES } from "./checklist.js";
 import {
   I, esc, fmtCLP, fmtDate, fmtDateTime, monthKey, dInput, docStatus,
   iconSpan, emptyBox, toast, $, $$
-} from "../ui.js";
+} from "./ui.js";
 
 const EST = {
   pendiente: { l: "Pendiente", c: "neutral" }, agendado: { l: "Agendado", c: "warn" },

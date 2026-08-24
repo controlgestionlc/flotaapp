@@ -1,5 +1,5 @@
-import { store } from "../store.js";
-import { I, esc, toggleTheme } from "../ui.js";
+import { store } from "./store.js";
+import { I, esc, toggleTheme } from "./ui.js";
 
 export async function renderLogin(host, ctx, onLogin) {
   const demo = store.mode === "demo";
