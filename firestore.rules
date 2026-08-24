@@ -1,0 +1,83 @@
+rules_version = '2';
+
+// Reglas de seguridad de Firestore para Bitácora de Flota.
+// Modelo de roles: conductor, supervisor, gerente, administrador.
+// Los permisos se resuelven a partir del rol guardado en /users/{uid}.
+//
+// Revisa y ajusta antes de producción. Estas reglas asumen que el
+// documento de perfil de cada usuario existe en /users/{uid}.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+    function profile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    function role() {
+      return signedIn() ? profile().role : '';
+    }
+    function isActive() {
+      return signedIn() && profile().activo == true;
+    }
+    function hasRole(roles) {
+      return isActive() && (role() in roles);
+    }
+
+    // Perfiles de usuario
+    match /users/{uid} {
+      // Cada quien lee su propio perfil; supervisor/gerente/admin leen todos.
+      allow read: if signedIn() && (request.auth.uid == uid || hasRole(['supervisor','gerente','administrador']));
+      // Solo el administrador crea o edita perfiles y roles.
+      allow create, update, delete: if hasRole(['administrador']);
+    }
+
+    // Registro de dispositivos (deviceId + último uso). Cualquier usuario
+    // activo puede registrar el dispositivo desde el que trabaja.
+    match /devices/{deviceId} {
+      allow read: if hasRole(['supervisor','gerente','administrador']);
+      allow write: if isActive();
+    }
+
+    // Camiones y su documentación
+    match /trucks/{id} {
+      allow read: if isActive();
+      allow create, update, delete: if hasRole(['supervisor','administrador']);
+    }
+
+    // Checklists de turno
+    match /checklists/{id} {
+      allow read: if hasRole(['supervisor','gerente','administrador'])
+                  || (isActive() && resource.data.uid == request.auth.uid);
+      // El conductor crea su propio checklist (uid propio); no se edita luego.
+      allow create: if isActive()
+                    && request.resource.data.uid == request.auth.uid
+                    && hasRole(['conductor','administrador']);
+      allow update, delete: if hasRole(['administrador']);
+    }
+
+    // Bitácora de novedades
+    match /bitacora/{id} {
+      allow read: if hasRole(['supervisor','gerente','administrador'])
+                  || (isActive() && resource.data.uid == request.auth.uid);
+      allow create: if isActive()
+                    && request.resource.data.uid == request.auth.uid
+                    && hasRole(['conductor','administrador']);
+      allow update, delete: if hasRole(['administrador']);
+    }
+
+    // Órdenes de taller y costos
+    match /orders/{id} {
+      allow read: if hasRole(['supervisor','gerente','administrador']);
+      allow create, update, delete: if hasRole(['supervisor','administrador']);
+    }
+
+    // Fallas descartadas (marcadas por el supervisor/admin)
+    match /resolved/{id} {
+      allow read: if hasRole(['supervisor','gerente','administrador']);
+      allow write: if hasRole(['supervisor','administrador']);
+    }
+  }
+}
