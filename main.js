@@ -3,7 +3,7 @@
 // =============================================================
 import { store } from "./store.js";
 import { can, roleLabel } from "./permissions.js";
-import { I, esc, applyTheme, toggleTheme, toast } from "./ui.js";
+import { I, esc, applyTheme, toggleTheme, toast, setDocDias } from "./ui.js";
 import { renderLogin } from "./login.js";
 import { renderConductor } from "./conductor.js";
 import { renderPanel } from "./panel.js";
@@ -14,6 +14,8 @@ import { renderEmpresa } from "./empresa.js";
 import { renderResumen } from "./resumen.js";
 import { renderProductos } from "./productos.js";
 import { renderImportar } from "./importar.js";
+import { renderMantencion } from "./mantencion.js";
+import { renderAlertas } from "./alertas.js";
 
 const APP = document.getElementById("app");
 
@@ -24,7 +26,7 @@ export const ctx = {
   route: "home",
   params: {},
   company() { return COMPANY; },
-  async reloadCompany() { try { COMPANY = await store.getCompany(); } catch (e) {} },
+  async reloadCompany() { try { COMPANY = await store.getCompany(); setDocDias(COMPANY.avisoDias || 30); } catch (e) {} },
   go(route, params) {
     this.route = route; this.params = params || {};
     try { history.pushState({ bf: "sub", route, params: this.params }, ""); } catch (e) {}
@@ -83,6 +85,14 @@ async function routeTo(view) {
   const p = ctx.profile, r = ctx.route;
   if (p.role === "conductor") return renderConductor(view, ctx);
   if (r === "camiones" || r === "truckForm" || r === "truckDetail") return renderCamiones(view, ctx);
+  if (r === "mantencion") {
+    if (!can(p, "truck.manage")) { ctx.route = "home"; return renderPanel(view, ctx); }
+    return renderMantencion(view, ctx);
+  }
+  if (r === "alertas") {
+    if (!can(p, "fleet.view")) { ctx.route = "home"; return renderPanel(view, ctx); }
+    return renderAlertas(view, ctx);
+  }
   if (r === "resumen") return renderResumen(view, ctx);
   if (r === "usuarios" || r === "userForm") {
     if (!can(p, "user.manage")) { ctx.route = "home"; return renderPanel(view, ctx); }

@@ -57,6 +57,7 @@ export async function renderImportar(view, ctx) {
 
   const [trucks, products, existing] = await Promise.all([store.listTrucks(), store.listProducts(), store.listTrips()]);
   const existingGmm = new Set(existing.map(t => String(t.gmm || "")).filter(Boolean));
+  const existingByGmm = {}; existing.forEach(t => { if (t.gmm) existingByGmm[String(t.gmm)] = t; });
   const truckByPat = {}; trucks.forEach(t => { truckByPat[normPat(t.patente)] = t; });
   const prodByCode = {}; products.forEach(p => { prodByCode[normCode(p.codigo)] = p; });
 
@@ -67,15 +68,14 @@ export async function renderImportar(view, ctx) {
     if (!nonEmpty.length) { parsed = { trips: [], total: 0, dup: 0, unmatched: [], error: "El archivo está vacío." }; return; }
     const header = nonEmpty[0], cols = findCols(header);
     if (cols.gmm < 0 || cols.patente < 0 || cols.codigo < 0) { parsed = { trips: [], total: 0, dup: 0, unmatched: [], error: "No se reconocen las columnas. Debe tener al menos NºGMM, Patente y Código." }; return; }
-    const trips = []; const seen = new Set(); const unmatched = new Set(); let dup = 0;
+    const trips = []; const merges = []; const seen = new Set(); const unmatched = new Set(); let dup = 0;
     for (let i = 1; i < nonEmpty.length; i++) {
       const r = nonEmpty[i];
       const gmm = String(r[cols.gmm] == null ? "" : r[cols.gmm]).trim();
       if (!gmm) continue;
-      if (existingGmm.has(gmm) || seen.has(gmm)) { dup++; continue; }
+      if (seen.has(gmm)) { dup++; continue; }
       seen.add(gmm);
       const pat = r[cols.patente], nP = normPat(pat), truck = truckByPat[nP];
-      if (!truck && pat) unmatched.add(String(pat).trim());
       const code = String(cols.codigo >= 0 ? (r[cols.codigo] == null ? "" : r[cols.codigo]) : "").trim();
       const desc = String(cols.descrip >= 0 ? (r[cols.descrip] == null ? "" : r[cols.descrip]) : "").trim();
       const match = prodByCode[normCode(code)];
@@ -85,19 +85,32 @@ export async function renderImportar(view, ctx) {
       const unidad = producto.um || inferUM(desc);
       const fechaTs = toTs(cols.fecha >= 0 ? r[cols.fecha] : null);
       const predio = String(cols.origen >= 0 ? (r[cols.origen] || "") : "").trim();
-      trips.push({
-        truckId: truck ? truck.id : "", patente: String(pat || "").trim(),
-        uid: ctx.profile.uid, driverNombre: "", deviceId: "import", estado: "cerrado",
-        origen: predio, predio: predio,
-        rolPredio: String(cols.rol >= 0 ? (r[cols.rol] || "") : "").trim(),
-        comuna: String(cols.comuna >= 0 ? (r[cols.comuna] || "") : "").trim(),
-        producto, volumen: parseNum(cols.cantidad >= 0 ? r[cols.cantidad] : 0), unidad,
-        guiaDespacho: String(cols.guia >= 0 ? (r[cols.guia] || "") : "").trim(), gmm,
-        salida: fechaTs, salidaGps: null, plantaDestino: String(cols.destino >= 0 ? (r[cols.destino] || "") : "").trim(),
-        llegada: fechaTs, llegadaGps: null, ts: fechaTs, importado: true
-      });
+      const destino = String(cols.destino >= 0 ? (r[cols.destino] || "") : "").trim();
+      const rolPredio = String(cols.rol >= 0 ? (r[cols.rol] || "") : "").trim();
+      const comuna = String(cols.comuna >= 0 ? (r[cols.comuna] || "") : "").trim();
+      const volumen = parseNum(cols.cantidad >= 0 ? r[cols.cantidad] : 0);
+      const guia = String(cols.guia >= 0 ? (r[cols.guia] || "") : "").trim();
+      const already = existingByGmm[gmm];
+      if (already) {
+        if (already.importado) { dup++; continue; } // ya es un histórico importado
+        merges.push({ id: already.id, patch: {
+          producto, volumen, unidad, rolPredio, comuna,
+          plantaDestino: already.plantaDestino || destino,
+          predio: already.predio || predio, importDetail: true
+        } });
+      } else {
+        if (!truck && pat) unmatched.add(String(pat).trim());
+        trips.push({
+          truckId: truck ? truck.id : "", patente: String(pat || "").trim(),
+          uid: ctx.profile.uid, driverNombre: "", deviceId: "import", estado: "cerrado",
+          origen: predio, predio: predio, rolPredio, comuna,
+          producto, volumen, unidad, guiaDespacho: guia, gmm,
+          salida: fechaTs, salidaGps: null, plantaDestino: destino,
+          llegada: fechaTs, llegadaGps: null, ts: fechaTs, importado: true
+        });
+      }
     }
-    parsed = { trips, total: nonEmpty.length - 1, dup, unmatched: Array.from(unmatched) };
+    parsed = { trips, merges, total: nonEmpty.length - 1, dup, unmatched: Array.from(unmatched) };
   }
 
   async function onFile(e) {
@@ -112,12 +125,14 @@ export async function renderImportar(view, ctx) {
   }
 
   async function doImport() {
-    if (!parsed || !parsed.trips.length) return;
-    const btn = $("#im-do", view); btn.disabled = true; btn.textContent = "Importando " + parsed.trips.length + "...";
+    const nOps = (parsed ? parsed.trips.length : 0) + (parsed && parsed.merges ? parsed.merges.length : 0);
+    if (!nOps) return;
+    const btn = $("#im-do", view); btn.disabled = true; btn.textContent = "Importando...";
     try {
-      await store.addTripsBulk(parsed.trips);
+      if (parsed.trips.length) await store.addTripsBulk(parsed.trips);
+      if (parsed.merges && parsed.merges.length) { for (const m of parsed.merges) await store.saveTrip(m.id, m.patch); }
       parsed.trips.forEach(t => existingGmm.add(t.gmm));
-      toast(parsed.trips.length + " viaje(s) importados", "ok");
+      toast(parsed.trips.length + " nuevo(s), " + (parsed.merges ? parsed.merges.length : 0) + " actualizado(s)", "ok");
       ctx.go("home", {});
     } catch (e) { toast("No se pudo importar: " + (e.message || e), "err"); btn.disabled = false; btn.textContent = "Reintentar importación"; }
   }
@@ -125,7 +140,7 @@ export async function renderImportar(view, ctx) {
   function summary() {
     if (!parsed) return "Ningún archivo cargado todavía.";
     if (parsed.error) return "No se pudo leer: " + esc(parsed.error);
-    let s = "Filas leídas: <b>" + parsed.total + "</b>. Nuevos a importar: <b style='color:var(--ok)'>" + parsed.trips.length + "</b>. Duplicados omitidos (mismo GMM): <b>" + parsed.dup + "</b>.";
+    let s = "Filas leídas: <b>" + parsed.total + "</b>. Nuevos: <b style='color:var(--ok)'>" + parsed.trips.length + "</b>. Actualizados por GMM: <b style='color:var(--accent)'>" + (parsed.merges ? parsed.merges.length : 0) + "</b>. Duplicados omitidos: <b>" + parsed.dup + "</b>.";
     if (parsed.unmatched.length) s += "<br><span style='color:var(--warn)'>Patentes sin camión registrado (se guardan igual, sin vincular): " + esc(parsed.unmatched.join(", ")) + "</span>";
     return s;
   }
@@ -142,12 +157,12 @@ export async function renderImportar(view, ctx) {
     view.innerHTML =
       '<button class="backlink" id="im-back">' + I.back + " Panel</button>" +
       '<div class="subhead"><h2>Importar viajes históricos</h2></div>' +
-      '<div class="banner">' + I.alert + "<div>Solo administrador. Sube el Excel con la hoja <b>base</b> (o su versión CSV). No se duplican viajes: se omiten los que ya tengan el mismo N° GMM.</div></div>" +
+      '<div class="banner">' + I.alert + "<div>Solo administrador. Sube el Excel con la hoja <b>base</b> (o su versión CSV). Los viajes que el chofer ya registró (mismo N° GMM) se completan con el detalle del Excel; los históricos ya importados se omiten.</div></div>" +
       '<div class="card pad section"><input type="file" id="im-file" accept=".xlsx,.csv" style="display:none">' +
         '<button class="btn btn-primary" id="im-pick">' + I.upload + "Elegir archivo (.xlsx o .csv)</button>" +
         '<div id="im-status" class="meta-line" style="margin-top:12px;line-height:1.5">' + summary() + "</div></div>" +
       (parsed && parsed.trips.length ? preview() : "") +
-      (parsed && parsed.trips.length ? '<div class="formbar"><button class="btn btn-primary" id="im-do">' + I.upload + "Importar " + parsed.trips.length + " viaje(s)</button></div>" : "");
+      (parsed && (parsed.trips.length + (parsed.merges ? parsed.merges.length : 0)) ? '<div class="formbar"><button class="btn btn-primary" id="im-do">' + I.upload + "Importar " + (parsed.trips.length + (parsed.merges ? parsed.merges.length : 0)) + " registro(s)</button></div>" : "");
     $("#im-back", view).onclick = () => ctx.go("home", {});
     const pk = $("#im-pick", view); if (pk) pk.onclick = () => $("#im-file", view).click();
     const fi = $("#im-file", view); if (fi) fi.onchange = onFile;

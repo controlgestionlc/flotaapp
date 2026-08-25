@@ -165,7 +165,15 @@ async function firebaseAdapter() {
 
   const app  = appMod.initializeApp(FIREBASE_CONFIG);
   const auth = authMod.getAuth(app);
-  const dbf  = fsMod.getFirestore(app);
+  // Persistencia offline: guarda en el dispositivo y sincroniza al recuperar señal.
+  let dbf;
+  try {
+    dbf = fsMod.initializeFirestore(app, {
+      localCache: fsMod.persistentLocalCache({ tabManager: fsMod.persistentMultipleTabManager() })
+    });
+  } catch (e) {
+    dbf = fsMod.getFirestore(app);
+  }
   const {
     collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, query, orderBy
   } = fsMod;
@@ -278,7 +286,7 @@ export const store = {
   async getCompany() {
     let c = null;
     try { c = await A.get("config", "empresa"); } catch (e) { c = null; }
-    return Object.assign({ nombre: "Transportes La Cabaña", app: "Bitácora de Camiones", logo: "" }, c || {});
+    return Object.assign({ nombre: "Transportes La Cabaña", app: "Bitácora de Camiones", logo: "", avisoDias: 30 }, c || {});
   },
   async saveCompany(data) { return A.set("config", "empresa", Object.assign({ id: "empresa" }, data)); },
 
@@ -315,6 +323,23 @@ export const store = {
   async addTrip(data) { return A.add("trips", data); },
   async saveTrip(id, data) { await A.set("trips", id, data); return id; },
   async addTripsBulk(items) { return A.bulkAdd("trips", items); },
+  // Guarda un viaje sin bloquear la interfaz: si no hay señal, queda en el
+  // dispositivo (persistencia) y se sube solo al recuperar conexión.
+  async saveTripResilient(id, data) {
+    const pr = A.set("trips", id, data);
+    const race = await Promise.race([
+      pr.then(() => "ok", e => ({ err: e })),
+      new Promise(r => setTimeout(() => r("timeout"), 2500))
+    ]);
+    if (race === "ok") return { ok: true, synced: true };
+    if (race && race.err) {
+      const e = race.err;
+      if (e && (e.code === "permission-denied" || e.code === "not_writer" || e.code === "not_granted")) throw e;
+      return { ok: true, synced: false };
+    }
+    pr.then(() => {}, () => {}); // evita rechazo no manejado
+    return { ok: true, synced: false };
+  },
 
   // --- productos trasladados ---
   async listProducts() { return (await A.list("products")).sort((a, b) => (a.codigo || "").localeCompare(b.codigo || "")); },

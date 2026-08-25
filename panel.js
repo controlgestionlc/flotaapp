@@ -1,6 +1,7 @@
 import { store } from "./store.js";
 import { can } from "./permissions.js";
 import { DOC_TYPES } from "./checklist.js";
+import { maintenanceAlerts } from "./maintenance.js";
 import {
   I, esc, fmtCLP, fmtDate, fmtDateTime, monthKey, dInput, docStatus,
   iconSpan, emptyBox, toast, openSheet, closeSheet, $, $$
@@ -87,8 +88,8 @@ function buildAlerts(trucks, orders) {
 
 async function dashboard(view, ctx) {
   const p = ctx.profile;
-  const [trucks, cks, bits, orders, resolved] = await Promise.all([
-    store.listTrucks(), store.listChecklists(), store.listBitacora(), store.listOrders(), store.listResolved()
+  const [trucks, cks, bits, orders, resolved, fuel] = await Promise.all([
+    store.listTrucks(), store.listChecklists(), store.listBitacora(), store.listOrders(), store.listResolved(), store.listFuel()
   ]);
   const fallas = openFallas(cks, bits, orders, resolved);
   const manage = can(p, "order.manage");
@@ -121,13 +122,15 @@ async function dashboard(view, ctx) {
     '<span class="pill ' + (nFuera ? "crit" : nObs ? "warn" : "ok") + '"><span class="dot"></span>' + nOp + " de " + trucks.length + " disponibles</span></div>" +
     legend + '<div class="card">' + (trucks.length ? availRows : emptyBox("No hay camiones registrados")) + "</div></div>";
 
-  const alerts = buildAlerts(trucks, orders);
+  const alerts = buildAlerts(trucks, orders).concat(maintenanceAlerts(trucks, fuel));
+  alerts.sort((a, b) => (a.cls === "crit" ? 0 : 1) - (b.cls === "crit" ? 0 : 1));
+  const alertsTop = alerts.slice(0, 6);
   const alertsSection = alerts.length
-    ? '<div class="section"><div class="subhead"><h2>Alertas</h2><span class="pill ' + (alerts.some(a => a.cls === "crit") ? "crit" : "warn") + '">' + alerts.length + "</span></div><div class='card'>" +
-      alerts.map(a =>
-        '<div class="row" ' + (a.kind === "doc" ? 'data-alert-truck="' + a.truckId + '"' : 'data-alert-order="' + a.orderId + '"') + ' style="cursor:pointer">' +
+    ? '<div class="section"><div class="subhead"><h2>Alertas</h2><button class="btn sm btn-ghost" id="alr-all">Ver todas (' + alerts.length + ")</button></div><div class='card'>" +
+      alertsTop.map(a =>
+        '<div class="row" ' + (a.kind === "detenido" ? 'data-alert-order="' + a.orderId + '"' : 'data-alert-truck="' + a.truckId + '"') + ' style="cursor:pointer">' +
         '<span class="sev-stripe ' + (a.cls === "crit" ? "sev-alta" : "sev-media") + '"></span><div class="rl"><div class="t">' + iconSpan(a.kind === "doc" ? "doc" : "wrench") + esc(a.text) + "</div></div><span class='arrow'>" + I.arrow + "</span></div>"
-      ).join("") + "</div></div>"
+      ).join("") + (alerts.length > alertsTop.length ? '<div class="row" id="alr-more" style="cursor:pointer;justify-content:center"><span class="meta-line">+ ' + (alerts.length - alertsTop.length) + " más</span></div>" : "") + "</div></div>"
     : "";
 
   const navBtns = ['<button class="btn btn-ghost" id="nav-camiones" style="flex:1;min-width:140px">' + I.truck + "Camiones</button>"];
@@ -165,6 +168,8 @@ async function dashboard(view, ctx) {
   $$("[data-kpi]", view).forEach(b => b.onclick = () => kpiDetail(ctx, b.getAttribute("data-kpi"), { trucks, orders, fallas, avail, openOrders, mesTotal }));
   $$("[data-alert-truck]", view).forEach(b => b.onclick = () => ctx.go("truckDetail", { id: b.getAttribute("data-alert-truck") }));
   $$("[data-alert-order]", view).forEach(b => b.onclick = () => { orderDraft = null; ctx.go("order", { id: b.getAttribute("data-alert-order") }); });
+  const aa = $("#alr-all", view); if (aa) aa.onclick = () => ctx.go("alertas", {});
+  const am = $("#alr-more", view); if (am) am.onclick = () => ctx.go("alertas", {});
   $("#nav-camiones", view).onclick = () => ctx.go("camiones", {});
   const nr = $("#nav-reportes", view); if (nr) nr.onclick = () => ctx.go("reportes", {});
   const npr = $("#nav-productos", view); if (npr) npr.onclick = () => ctx.go("productos", {});

@@ -3,7 +3,7 @@ import { I, esc, toast, $ } from "./ui.js";
 
 export async function renderEmpresa(view, ctx) {
   const co = await store.getCompany();
-  const draft = { nombre: co.nombre || "", app: co.app || "", logo: co.logo || "" };
+  const draft = { nombre: co.nombre || "", app: co.app || "", logo: co.logo || "", avisoDias: co.avisoDias || 30 };
 
   function paint() {
     view.innerHTML =
@@ -21,13 +21,15 @@ export async function renderEmpresa(view, ctx) {
           "</div>" +
         "</div>" +
         '<label class="fld"><span class="lb">Nombre de la empresa</span><input class="input" id="em-nombre" value="' + esc(draft.nombre) + '"></label>' +
-        '<label class="fld" style="margin-bottom:0"><span class="lb">Nombre de la app</span><input class="input" id="em-app" value="' + esc(draft.app) + '"></label>' +
+        '<label class="fld"><span class="lb">Nombre de la app</span><input class="input" id="em-app" value="' + esc(draft.app) + '"></label>' +
+        '<label class="fld" style="margin-bottom:0"><span class="lb">Avisar documentos por vencer con (días de antelación)</span><input class="input num" id="em-aviso" inputmode="numeric" placeholder="30" value="' + esc(draft.avisoDias) + '"></label>' +
       "</div>" +
       '<div class="formbar"><button class="btn btn-primary" id="em-save">' + I.check + "Guardar</button></div>";
 
     $("#em-back", view).onclick = () => ctx.go("home", {});
     $("#em-nombre", view).oninput = e => { draft.nombre = e.target.value; };
     $("#em-app", view).oninput = e => { draft.app = e.target.value; };
+    $("#em-aviso", view).oninput = e => { draft.avisoDias = e.target.value; };
     $("#em-upload", view).onclick = () => $("#em-file", view).click();
     $("#em-file", view).onchange = e => {
       const f = e.target.files && e.target.files[0];
@@ -38,7 +40,7 @@ export async function renderEmpresa(view, ctx) {
       if (!draft.nombre.trim() || !draft.app.trim()) { toast("Completa el nombre de la empresa y de la app", "err"); return; }
       const btn = $("#em-save", view); btn.disabled = true; btn.textContent = "Guardando...";
       try {
-        await store.saveCompany({ nombre: draft.nombre.trim(), app: draft.app.trim(), logo: draft.logo || "" });
+        await store.saveCompany({ nombre: draft.nombre.trim(), app: draft.app.trim(), logo: draft.logo || "", avisoDias: Math.max(1, Number(draft.avisoDias) || 30) });
         await ctx.reloadCompany();
         toast("Datos de empresa guardados", "ok");
         ctx.go("home", {});

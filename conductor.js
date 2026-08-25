@@ -20,7 +20,8 @@ export async function renderConductor(view, ctx) {
   if (screen === "combustible") return combustible(view, ctx, sel);
   if (screen === "viaje") return viajeSalida(view, ctx, sel);
   if (screen === "viajesAbiertos") return viajesAbiertos(view, ctx, sel);
-  if (screen === "cerrarViaje") return viajeLlegada(view, ctx, sel);
+  if (screen === "llegada") return viajeLlegada(view, ctx, sel);
+  if (screen === "termino") return viajeTermino(view, ctx, sel);
   if (screen === "historial") return historial(view, ctx, sel);
   return home(view, ctx, sel);
 }
@@ -50,7 +51,7 @@ async function home(view, ctx, t) {
   const abiertos = trips.filter(v => v.truckId === t.id && v.estado !== "cerrado");
   const alerta = abiertos.length
     ? '<div class="banner" id="c-open-alert" style="cursor:pointer;border-left-color:var(--warn);background:var(--warn-soft)">' + I.alert +
-      "<div><b>Tienes " + abiertos.length + " viaje(s) sin cerrar.</b> Toca para registrar la llegada a destino.</div></div>"
+      "<div><b>Tienes " + abiertos.length + " viaje(s) sin terminar.</b> Toca para registrar la llegada o el término.</div></div>"
     : "";
   view.innerHTML =
     alerta +
@@ -66,8 +67,8 @@ async function home(view, ctx, t) {
     '<div class="tiles section">' +
       tile("c-checklist", I.check, doneToday ? "Repetir checklist" : "Checklist de inicio de turno", doneToday ? "Ya registraste uno hoy" : "Revisa el camión antes de salir") +
       tile("c-combustible", I.fuel, "Cargar combustible", "Litros, precio, kilómetros y estación") +
-      tile("c-viaje", I.route, "Iniciar viaje (salida)", "Origen, producto y GPS de salida") +
-      (abiertos.length ? tile("c-cerrar", I.check, "Cerrar viaje (llegada)", abiertos.length + " viaje(s) pendiente(s) de cierre") : "") +
+      tile("c-viaje", I.route, "Iniciar viaje (salida)", "Predio de origen, guía y GPS") +
+      (abiertos.length ? tile("c-cerrar", I.check, "Viajes en curso (" + abiertos.length + ")", "Registrar llegada o término de entrega") : "") +
       tile("c-bitacora", I.note, "Registrar novedad", "Falla, incidente o kilometraje") +
       tile("c-historial", I.history, "Historial del camión", "Últimos checklists y registros") +
     "</div>" +
@@ -245,114 +246,125 @@ function prodListHTML(d) {
 }
 
 // ---------------- VIAJE · ETAPA 1 (salida) ----------------
-async function viajeSalida(view, ctx, t) {
-  if (!draft.viaje) draft.viaje = { origen: "", predio: "", volumen: "", unidad: "M3", guia: "", producto: null, prodQuery: "", gps: null, gpsState: "idle", products: null };
-  const d = draft.viaje;
-  if (d.products === null) { d.products = []; try { d.products = await store.listProducts(); } catch (e) {} }
-  const unidadChips = ["M3", "MR"].map(u => '<button class="chip' + (d.unidad === u ? " on" : "") + '" data-unidad="' + u + '">' + u + "</button>").join("");
-  const prodBox = d.producto
-    ? '<div class="row" style="border:1px solid var(--line);border-radius:11px;background:var(--surface-2)"><div class="rl"><div class="t">' + esc(d.producto.codigo) + (d.producto.um ? ' <span class="pill neutral">' + esc(d.producto.um) + "</span>" : "") + '</div><div class="m"><span>' + esc(d.producto.descripcion) + "</span><span>" + esc(d.producto.especie) + '</span></div></div><button class="btn sm btn-soft" id="vj-prod-clear">Cambiar</button></div>'
-    : '<input class="input" id="vj-prod" placeholder="Buscar por código, descripción o especie" value="' + esc(d.prodQuery || "") + '" autocomplete="off"><div class="card" id="vj-prod-list" style="margin-top:6px;max-height:240px;overflow:auto">' + prodListHTML(d) + "</div>";
+function fmtWait(ms) { if (!ms || ms < 0) return "-"; const m = Math.round(ms / 60000); const h = Math.floor(m / 60); const mm = m % 60; return h ? (h + " h " + mm + " min") : (mm + " min"); }
 
+async function viajeSalida(view, ctx, t) {
+  if (!draft.viaje) draft.viaje = { predio: "", guia: "", gps: null, gpsState: "idle" };
+  const d = draft.viaje;
   view.innerHTML =
     '<button class="backlink" id="vj-back">' + I.back + " Volver</button>" +
-    '<div class="subhead"><h2>Salida del predio</h2><span class="pill neutral">Etapa 1 de 2</span></div>' +
+    '<div class="subhead"><h2>Salida del predio</h2><span class="pill neutral">Etapa 1 de 3</span></div>' +
     '<p class="meta-line" style="margin:-4px 2px 14px">' + esc(t.num + " · " + t.patente) + "</p>" +
-    '<div class="card pad section">' + gpsBox(d) + '<p class="meta-line" style="font-size:.8rem;margin:10px 2px 0">La salida se registra con la fecha y hora actuales.</p></div>' +
+    '<div class="card pad section">' + gpsBox(d) + '<p class="meta-line" style="font-size:.8rem;margin:10px 2px 0">La salida se registra con la fecha, hora y GPS actuales. Si no hay señal, se guarda igual y se sube al recuperarla.</p></div>' +
     '<div class="card pad section">' +
-      '<label class="fld"><span class="lb">Origen</span><input class="input" id="vj-origen" placeholder="Lugar o camino de origen" value="' + esc(d.origen) + '"></label>' +
-      '<label class="fld"><span class="lb">Nombre del predio</span><input class="input" id="vj-predio" placeholder="Predio de carga" value="' + esc(d.predio) + '"></label>' +
-      '<label class="fld"><span class="lb">Producto trasladado</span>' + prodBox + "</label>" +
-      '<div class="grid2"><label class="fld" style="margin-bottom:0"><span class="lb">Volumen</span><input class="input num" id="vj-volumen" inputmode="decimal" placeholder="Ej: 32" value="' + esc(d.volumen) + '"></label>' +
-      '<label class="fld" style="margin-bottom:0"><span class="lb">Unidad</span><div class="chips">' + unidadChips + "</div></label></div>" +
-      '<label class="fld" style="margin:14px 0 0"><span class="lb">Guía de despacho</span><input class="input" id="vj-guia" placeholder="N° de guía" value="' + esc(d.guia) + '"></label>' +
+      '<label class="fld"><span class="lb">Nombre del predio de origen</span><input class="input" id="vj-predio" placeholder="Predio de carga" value="' + esc(d.predio) + '"></label>' +
+      '<label class="fld" style="margin-bottom:0"><span class="lb">Guía de despacho</span><input class="input" id="vj-guia" placeholder="N° de guía" value="' + esc(d.guia) + '"></label>' +
     "</div>" +
     '<div class="formbar"><button class="btn btn-primary" id="vj-submit">' + I.route + "Registrar salida</button></div>";
-
-  const sync = () => { ["origen", "predio", "volumen", "guia"].forEach(k => { const el = $("#vj-" + k, view); if (el) d[k] = el.value; }); const pq = $("#vj-prod", view); if (pq) d.prodQuery = pq.value; };
-  ["origen", "predio", "volumen", "guia"].forEach(k => { const el = $("#vj-" + k, view); if (el) el.oninput = () => { d[k] = el.value; }; });
-  const pick = p => { sync(); if (p) { d.producto = { codigo: p.codigo, descripcion: p.descripcion, especie: p.especie, um: p.um || "" }; if (p.um === "M3" || p.um === "MR") d.unidad = p.um; } else d.producto = null; d.prodQuery = ""; viajeSalida(view, ctx, t); };
-  const pq = $("#vj-prod", view);
-  if (pq) pq.oninput = () => { d.prodQuery = pq.value; const lc = $("#vj-prod-list", view); if (lc) { lc.innerHTML = prodListHTML(d); $$("[data-prod]", lc).forEach(b => b.onclick = () => pick(d.products.find(x => x.id === b.getAttribute("data-prod")))); } };
-  $$("[data-prod]", view).forEach(b => b.onclick = () => pick(d.products.find(x => x.id === b.getAttribute("data-prod"))));
-  const pc = $("#vj-prod-clear", view); if (pc) pc.onclick = () => { sync(); d.producto = null; viajeSalida(view, ctx, t); };
-  $$("[data-unidad]", view).forEach(b => b.onclick = () => { sync(); d.unidad = b.getAttribute("data-unidad"); viajeSalida(view, ctx, t); });
+  const sync = () => { ["predio", "guia"].forEach(k => { const el = $("#vj-" + k, view); if (el) d[k] = el.value; }); };
+  ["predio", "guia"].forEach(k => { const el = $("#vj-" + k, view); if (el) el.oninput = () => { d[k] = el.value; }; });
   const gb = $("#gps-btn", view); if (gb) gb.onclick = () => { d.gpsState = "loading"; viajeSalida(view, ctx, t); captureGPS((g, err) => { d.gps = g; d.gpsState = g ? "ok" : (err || "error"); if (ctx.params.screen === "viaje") viajeSalida(view, ctx, t); }); };
   $("#vj-back", view).onclick = () => { draft.viaje = null; ctx.go("home", { screen: "home" }); };
   $("#vj-submit", view).onclick = async () => {
     sync();
-    if (!d.predio.trim() && !d.origen.trim()) { toast("Indica el origen o el predio", "err"); return; }
-    if (!d.producto) { toast("Selecciona el producto trasladado", "err"); return; }
-    const now = Date.now();
+    if (!d.predio.trim()) { toast("Indica el predio de origen", "err"); return; }
+    const now = Date.now(), id = uid("trip");
     const rec = {
-      truckId: t.id, uid: ctx.profile.uid, deviceId: store.deviceId(), driverNombre: ctx.profile.nombre,
-      estado: "abierto", origen: d.origen.trim(), predio: d.predio.trim(), producto: d.producto,
-      volumen: Number(d.volumen) || 0, unidad: d.unidad, guiaDespacho: (d.guia || "").trim(),
-      salida: now, salidaGps: d.gps || null, plantaDestino: "", llegada: null, llegadaGps: null, gmm: "", ts: now
+      id, truckId: t.id, patente: t.patente, uid: ctx.profile.uid, deviceId: store.deviceId(), driverNombre: ctx.profile.nombre,
+      estado: "salida", origen: d.predio.trim(), predio: d.predio.trim(), guiaDespacho: (d.guia || "").trim(),
+      salida: now, salidaGps: d.gps || null, plantaDestino: "", llegada: null, llegadaGps: null, salidaPlanta: null, salidaPlantaGps: null,
+      gmm: "", producto: null, volumen: 0, unidad: "", tiempoEspera: null, ts: now, importado: false
     };
     const btn = $("#vj-submit", view); btn.disabled = true; btn.textContent = "Guardando...";
-    try { await store.addTrip(rec); draft.viaje = null; toast("Salida registrada. Cierra el viaje al llegar.", "ok"); ctx.go("home", { screen: "home" }); }
-    catch (e) { toast("No se pudo guardar: " + (e.message || e), "err"); btn.disabled = false; btn.textContent = "Registrar salida"; }
+    try {
+      const r = await store.saveTripResilient(id, rec); draft.viaje = null;
+      toast(r.synced ? "Salida registrada" : "Salida guardada. Se subirá al tener señal", "ok");
+      ctx.go("home", { screen: "home" });
+    } catch (e) { toast("No se pudo guardar: " + (e.message || e), "err"); btn.disabled = false; btn.textContent = "Registrar salida"; }
   };
   if (d.gpsState === "idle") { d.gpsState = "loading"; captureGPS((g, err) => { d.gps = g; d.gpsState = g ? "ok" : (err || "error"); if (ctx.params.screen === "viaje") viajeSalida(view, ctx, t); }); }
 }
 
-// ---------------- VIAJE · viajes abiertos ----------------
+// ---------------- VIAJE · viajes en curso ----------------
 async function viajesAbiertos(view, ctx, t) {
   const trips = await store.listTrips();
   const abiertos = trips.filter(v => v.truckId === t.id && v.estado !== "cerrado").sort((a, b) => (b.salida || b.ts) - (a.salida || a.ts));
-  const rows = abiertos.length ? abiertos.map(v =>
-    '<div class="row"><span class="sev-stripe sev-media"></span><div class="rl"><div class="t">' + esc((v.predio || v.origen || "") + (v.producto ? " · " + v.producto.descripcion : "")) + "</div>" +
-    '<div class="m">' + (v.volumen ? '<span class="num">' + nfv(v.volumen) + " " + esc(v.unidad || "") + "</span>" : "") + (v.guiaDespacho ? "<span>" + esc(v.guiaDespacho) + "</span>" : "") + "<span>Salida " + fmtDateTime(v.salida || v.ts) + "</span></div>" +
-    '<div style="margin-top:10px"><button class="btn sm btn-primary" data-close="' + esc(v.id) + '">' + I.check + "Cerrar viaje</button></div></div></div>"
-  ).join("") : emptyBox("No tienes viajes abiertos");
+  const stageInfo = v => v.estado === "en_planta"
+    ? { label: "En planta", next: "termino", btn: "Registrar término" }
+    : { label: "En ruta", next: "llegada", btn: "Registrar llegada" };
+  const rows = abiertos.length ? abiertos.map(v => { const si = stageInfo(v);
+    return '<div class="row"><span class="sev-stripe sev-media"></span><div class="rl"><div class="t">' + esc(v.predio || v.origen || "") + ' <span class="pill warn">' + si.label + "</span></div>" +
+      '<div class="m">' + (v.guiaDespacho ? "<span>Guía " + esc(v.guiaDespacho) + "</span>" : "") + (v.plantaDestino ? "<span>" + esc(v.plantaDestino) + "</span>" : "") + "<span>Salida " + fmtDateTime(v.salida || v.ts) + "</span></div>" +
+      '<div style="margin-top:10px"><button class="btn sm btn-primary" data-stage="' + esc(v.id) + "|" + si.next + '">' + I.check + esc(si.btn) + "</button></div></div></div>";
+  }).join("") : emptyBox("No tienes viajes en curso");
   view.innerHTML =
     '<button class="backlink" id="va-back">' + I.back + " Volver</button>" +
-    '<div class="subhead"><h2>Viajes sin cerrar</h2></div>' +
+    '<div class="subhead"><h2>Viajes en curso</h2></div>' +
     '<p class="meta-line" style="margin:-4px 2px 14px">' + esc(t.num + " · " + t.patente) + "</p>" +
     '<div class="card">' + rows + "</div>";
   $("#va-back", view).onclick = () => ctx.go("home", { screen: "home" });
-  $$("[data-close]", view).forEach(b => b.onclick = () => ctx.go("home", { screen: "cerrarViaje", tripId: b.getAttribute("data-close") }));
+  $$("[data-stage]", view).forEach(b => b.onclick = () => { const parts = b.getAttribute("data-stage").split("|"); ctx.go("home", { screen: parts[1], tripId: parts[0] }); });
 }
 
-// ---------------- VIAJE · ETAPA 2 (llegada / cierre) ----------------
+// ---------------- VIAJE · ETAPA 2 (llegada) ----------------
 async function viajeLlegada(view, ctx, t) {
   const tripId = ctx.params.tripId;
   const trips = await store.listTrips();
   const trip = trips.find(v => v.id === tripId);
   if (!trip) { toast("Viaje no encontrado", "err"); return ctx.go("home", { screen: "viajesAbiertos" }); }
-  if (!draft.lleg || draft.lleg.tripId !== tripId) {
-    draft.lleg = { tripId, planta: trip.plantaDestino || "", llegada: dtLocal(Date.now()), gmm: trip.gmm || "", gps: null, gpsState: "idle" };
-  }
+  if (!draft.lleg || draft.lleg.tripId !== tripId) draft.lleg = { tripId, planta: trip.plantaDestino || "", gps: null, gpsState: "idle" };
   const d = draft.lleg;
   const plants = Array.from(new Set(trips.map(v => v.plantaDestino).filter(Boolean)));
   view.innerHTML =
     '<button class="backlink" id="vl-back">' + I.back + " Volver</button>" +
-    '<div class="subhead"><h2>Llegada a destino</h2><span class="pill neutral">Etapa 2 de 2</span></div>' +
-    '<div class="card pad section" style="margin-bottom:12px"><div class="meta-line" style="font-size:.85rem">Viaje desde <b style="color:var(--ink)">' + esc(trip.predio || trip.origen || "") + "</b>" + (trip.producto ? " · " + esc(trip.producto.descripcion) : "") + "<br>Salida: " + fmtDateTime(trip.salida || trip.ts) + "</div></div>" +
-    '<div class="card pad section">' + gpsBox(d) + '<p class="meta-line" style="font-size:.8rem;margin:10px 2px 0">GPS, fecha y hora se toman por defecto; puedes editarlos si registras después.</p></div>' +
-    '<div class="card pad section">' +
-      '<label class="fld"><span class="lb">Planta destino</span><input class="input" id="vl-planta" list="vl-plants" placeholder="Planta o aserradero" value="' + esc(d.planta) + '"><datalist id="vl-plants">' + plants.map(p => '<option value="' + esc(p) + '"></option>').join("") + "</datalist></label>" +
-      '<label class="fld"><span class="lb">Llegada (fecha y hora)</span><input class="input" type="datetime-local" id="vl-llegada" value="' + esc(d.llegada) + '"></label>' +
-      '<label class="fld" style="margin-bottom:0"><span class="lb">GMM de recepción</span><input class="input" id="vl-gmm" placeholder="N° GMM" value="' + esc(d.gmm) + '"></label>' +
-    "</div>" +
-    '<div class="formbar"><button class="btn btn-primary" id="vl-submit">' + I.check + "Cerrar viaje</button></div>";
-  const sync = () => { const g = (id, k) => { const el = $(id, view); if (el) d[k] = el.value; }; g("#vl-planta", "planta"); g("#vl-llegada", "llegada"); g("#vl-gmm", "gmm"); };
-  ["#vl-planta", "#vl-llegada", "#vl-gmm"].forEach(id => { const el = $(id, view); if (el) el.oninput = sync; });
-  const gb = $("#gps-btn", view); if (gb) gb.onclick = () => { d.gpsState = "loading"; viajeLlegada(view, ctx, t); captureGPS((g, err) => { d.gps = g; d.gpsState = g ? "ok" : (err || "error"); if (ctx.params.screen === "cerrarViaje") viajeLlegada(view, ctx, t); }); };
+    '<div class="subhead"><h2>Llegada a destino</h2><span class="pill neutral">Etapa 2 de 3</span></div>' +
+    '<div class="card pad section" style="margin-bottom:12px"><div class="meta-line" style="font-size:.85rem">Viaje desde <b style="color:var(--ink)">' + esc(trip.predio || trip.origen || "") + "</b>" + (trip.guiaDespacho ? " · Guía " + esc(trip.guiaDespacho) : "") + "<br>Salida: " + fmtDateTime(trip.salida || trip.ts) + "</div></div>" +
+    '<div class="card pad section">' + gpsBox(d) + '<p class="meta-line" style="font-size:.8rem;margin:10px 2px 0">La llegada se registra con la fecha, hora y GPS actuales.</p></div>' +
+    '<div class="card pad section"><label class="fld" style="margin-bottom:0"><span class="lb">Nombre de la planta</span><input class="input" id="vl-planta" list="vl-plants" placeholder="Planta o aserradero de destino" value="' + esc(d.planta) + '"><datalist id="vl-plants">' + plants.map(p => '<option value="' + esc(p) + '"></option>').join("") + "</datalist></label></div>" +
+    '<div class="formbar"><button class="btn btn-primary" id="vl-submit">' + I.check + "Registrar llegada</button></div>";
+  const pl = $("#vl-planta", view); if (pl) pl.oninput = () => { d.planta = pl.value; };
+  const gb = $("#gps-btn", view); if (gb) gb.onclick = () => { d.gpsState = "loading"; viajeLlegada(view, ctx, t); captureGPS((g, err) => { d.gps = g; d.gpsState = g ? "ok" : (err || "error"); if (ctx.params.screen === "llegada") viajeLlegada(view, ctx, t); }); };
   $("#vl-back", view).onclick = () => { draft.lleg = null; ctx.go("home", { screen: "viajesAbiertos" }); };
   $("#vl-submit", view).onclick = async () => {
-    sync();
+    if (pl) d.planta = pl.value;
     if (!d.planta.trim()) { toast("Indica la planta de destino", "err"); return; }
-    const patch = Object.assign({}, trip, {
-      plantaDestino: d.planta.trim(), llegada: d.llegada ? new Date(d.llegada).getTime() : Date.now(),
-      llegadaGps: d.gps || trip.llegadaGps || null, gmm: (d.gmm || "").trim(), estado: "cerrado"
-    });
-    const btn = $("#vl-submit", view); btn.disabled = true; btn.textContent = "Cerrando...";
-    try { await store.saveTrip(tripId, patch); draft.lleg = null; toast("Viaje cerrado", "ok"); ctx.go("home", { screen: "home" }); }
-    catch (e) { toast("No se pudo cerrar: " + (e.message || e), "err"); btn.disabled = false; btn.textContent = "Cerrar viaje"; }
+    const patch = Object.assign({}, trip, { plantaDestino: d.planta.trim(), llegada: Date.now(), llegadaGps: d.gps || null, estado: "en_planta" });
+    const btn = $("#vl-submit", view); btn.disabled = true; btn.textContent = "Guardando...";
+    try { const r = await store.saveTripResilient(tripId, patch); draft.lleg = null; toast(r.synced ? "Llegada registrada" : "Llegada guardada. Se subirá al tener señal", "ok"); ctx.go("home", { screen: "home" }); }
+    catch (e) { toast("No se pudo guardar: " + (e.message || e), "err"); btn.disabled = false; btn.textContent = "Registrar llegada"; }
   };
-  if (d.gpsState === "idle") { d.gpsState = "loading"; captureGPS((g, err) => { d.gps = g; d.gpsState = g ? "ok" : (err || "error"); if (ctx.params.screen === "cerrarViaje") viajeLlegada(view, ctx, t); }); }
+  if (d.gpsState === "idle") { d.gpsState = "loading"; captureGPS((g, err) => { d.gps = g; d.gpsState = g ? "ok" : (err || "error"); if (ctx.params.screen === "llegada") viajeLlegada(view, ctx, t); }); }
+}
+
+// ---------------- VIAJE · ETAPA 3 (término de entrega) ----------------
+async function viajeTermino(view, ctx, t) {
+  const tripId = ctx.params.tripId;
+  const trips = await store.listTrips();
+  const trip = trips.find(v => v.id === tripId);
+  if (!trip) { toast("Viaje no encontrado", "err"); return ctx.go("home", { screen: "viajesAbiertos" }); }
+  if (!draft.term || draft.term.tripId !== tripId) draft.term = { tripId, gmm: trip.gmm || "", gps: null, gpsState: "idle" };
+  const d = draft.term;
+  const esperaAhora = trip.llegada ? fmtWait(Date.now() - trip.llegada) : "-";
+  view.innerHTML =
+    '<button class="backlink" id="vt-back">' + I.back + " Volver</button>" +
+    '<div class="subhead"><h2>Término de entrega</h2><span class="pill neutral">Etapa 3 de 3</span></div>' +
+    '<div class="card pad section" style="margin-bottom:12px"><div class="meta-line" style="font-size:.85rem">' + esc(trip.predio || trip.origen || "") + ' &rarr; <b style="color:var(--ink)">' + esc(trip.plantaDestino || "") + "</b><br>Llegada: " + (trip.llegada ? fmtDateTime(trip.llegada) : "-") + ' &middot; Espera hasta ahora: <b style="color:var(--ink)">' + esperaAhora + "</b></div></div>" +
+    '<div class="card pad section">' + gpsBox(d) + '<p class="meta-line" style="font-size:.8rem;margin:10px 2px 0">La salida de la planta se registra con la hora actual. El tiempo de espera se calcula desde la llegada.</p></div>' +
+    '<div class="card pad section"><label class="fld" style="margin-bottom:0"><span class="lb">GMM de recepción</span><input class="input" id="vt-gmm" placeholder="N° GMM de la recepción" value="' + esc(d.gmm) + '"></label></div>' +
+    '<div class="formbar"><button class="btn btn-primary" id="vt-submit">' + I.check + "Terminar entrega</button></div>";
+  const gm = $("#vt-gmm", view); if (gm) gm.oninput = () => { d.gmm = gm.value; };
+  const gb = $("#gps-btn", view); if (gb) gb.onclick = () => { d.gpsState = "loading"; viajeTermino(view, ctx, t); captureGPS((g, err) => { d.gps = g; d.gpsState = g ? "ok" : (err || "error"); if (ctx.params.screen === "termino") viajeTermino(view, ctx, t); }); };
+  $("#vt-back", view).onclick = () => { draft.term = null; ctx.go("home", { screen: "viajesAbiertos" }); };
+  $("#vt-submit", view).onclick = async () => {
+    if (gm) d.gmm = gm.value;
+    if (!d.gmm.trim()) { toast("Ingresa el GMM de recepción", "err"); return; }
+    const now = Date.now(), tiempoEspera = trip.llegada ? (now - trip.llegada) : null;
+    const patch = Object.assign({}, trip, { salidaPlanta: now, salidaPlantaGps: d.gps || null, gmm: d.gmm.trim(), estado: "cerrado", tiempoEspera });
+    const btn = $("#vt-submit", view); btn.disabled = true; btn.textContent = "Guardando...";
+    try { const r = await store.saveTripResilient(tripId, patch); draft.term = null; toast(r.synced ? "Entrega terminada. Viaje cerrado" : "Guardado. Se subirá al tener señal", "ok"); ctx.go("home", { screen: "home" }); }
+    catch (e) { toast("No se pudo guardar: " + (e.message || e), "err"); btn.disabled = false; btn.textContent = "Terminar entrega"; }
+  };
+  if (d.gpsState === "idle") { d.gpsState = "loading"; captureGPS((g, err) => { d.gps = g; d.gpsState = g ? "ok" : (err || "error"); if (ctx.params.screen === "termino") viajeTermino(view, ctx, t); }); }
 }
 
 // ---------------- HISTORIAL ----------------

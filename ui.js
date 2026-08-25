@@ -40,13 +40,18 @@ export function dInput(ts) {
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
 }
 
+// Días de antelación para avisar documentos por vencer (configurable por empresa).
+let DOC_DIAS = 30;
+export function setDocDias(n) { const v = Number(n); if (v > 0) DOC_DIAS = v; }
+export function getDocDias() { return DOC_DIAS; }
+
 // Estado de vencimiento de un documento a partir de su fecha (yyyy-mm-dd o ts).
 export function docStatus(vence) {
   if (!vence) return { k: "none", label: "Sin fecha", cls: "neutral", days: null };
   const t = typeof vence === "number" ? vence : new Date(vence + "T12:00:00").getTime();
   const days = Math.ceil((t - Date.now()) / 86400000);
-  if (days < 0)   return { k: "vencido",  label: "Vencido",   cls: "crit",    days };
-  if (days <= 30) return { k: "porvencer", label: "Por vencer", cls: "warn",   days };
+  if (days < 0)         return { k: "vencido",   label: "Vencido",    cls: "crit",    days };
+  if (days <= DOC_DIAS) return { k: "porvencer", label: "Por vencer", cls: "warn",    days };
   return { k: "vigente", label: "Vigente", cls: "ok", days };
 }
 
