@@ -61,18 +61,28 @@ function availStatus(truckId, orders, fallas) {
   return { k: "operativo", cls: "ok", label: "Operativo", order: null };
 }
 
-function docAlerts(trucks) {
-  let vencidos = 0, porvencer = 0;
+// Alertas automáticas: documentos vencidos/por vencer y camiones detenidos.
+const DETENIDO_DIAS = 5;
+function buildAlerts(trucks, orders) {
+  const out = [];
   trucks.forEach(t => {
-    DOC_TYPES.forEach(dt => {
-      const st = docStatus(t.docs && t.docs[dt.k] && t.docs[dt.k].vence);
-      if (st.k === "vencido") vencidos++; else if (st.k === "porvencer") porvencer++;
-    });
-    (t.docs && t.docs.otros || []).forEach(o => {
-      const st = docStatus(o.vence); if (st.k === "vencido") vencidos++; else if (st.k === "porvencer") porvencer++;
-    });
+    const push = (nombre, vence) => {
+      const st = docStatus(vence);
+      if (st.k === "vencido") out.push({ cls: "crit", kind: "doc", truckId: t.id, text: t.num + " · " + nombre + " vencido" });
+      else if (st.k === "porvencer") out.push({ cls: "warn", kind: "doc", truckId: t.id, text: t.num + " · " + nombre + " vence en " + st.days + " días" });
+    };
+    DOC_TYPES.forEach(dt => push(dt.n, t.docs && t.docs[dt.k] && t.docs[dt.k].vence));
+    (t.docs && t.docs.otros || []).forEach(o => push(o.nombre || "Documento", o.vence));
   });
-  return { vencidos, porvencer };
+  orders.filter(o => o.estado === "en_taller").forEach(o => {
+    const since = o.fechaAgendada || o.createdAt;
+    const dias = Math.floor((Date.now() - since) / 86400000);
+    if (dias >= DETENIDO_DIAS) {
+      const t = trucks.find(x => x.id === o.truckId) || { num: "?" };
+      out.push({ cls: "crit", kind: "detenido", orderId: o.id, text: t.num + " detenido hace " + dias + " días" + (o.otNumero ? " (" + o.otNumero + ")" : "") });
+    }
+  });
+  return out.sort((a, b) => (a.cls === "crit" ? 0 : 1) - (b.cls === "crit" ? 0 : 1));
 }
 
 async function dashboard(view, ctx) {
@@ -89,7 +99,6 @@ async function dashboard(view, ctx) {
   const operativos = nOp;
   const openOrders = orders.filter(o => o.estado !== "completado");
   const mesTotal = orders.filter(o => o.estado === "completado" && monthKey(o.completedAt) === monthKey()).reduce((s, o) => s + orderTotal(o), 0);
-  const docs = docAlerts(trucks);
 
   const kpis = '<div class="kpis section">' +
     kpi("a", operativos + "/" + trucks.length, "Operativos", "camiones sin novedad") +
@@ -112,16 +121,19 @@ async function dashboard(view, ctx) {
     '<span class="pill ' + (nFuera ? "crit" : nObs ? "warn" : "ok") + '"><span class="dot"></span>' + nOp + " de " + trucks.length + " disponibles</span></div>" +
     legend + '<div class="card">' + (trucks.length ? availRows : emptyBox("No hay camiones registrados")) + "</div></div>";
 
-  const docBanner = (docs.vencidos || docs.porvencer)
-    ? '<div class="banner" id="doc-banner" style="cursor:pointer">' + I.alert +
-      "<div><b>Documentación:</b> " + (docs.vencidos ? docs.vencidos + " vencido(s)" : "") +
-      (docs.vencidos && docs.porvencer ? " y " : "") + (docs.porvencer ? docs.porvencer + " por vencer" : "") +
-      ". Toca para revisar los camiones.</div></div>"
+  const alerts = buildAlerts(trucks, orders);
+  const alertsSection = alerts.length
+    ? '<div class="section"><div class="subhead"><h2>Alertas</h2><span class="pill ' + (alerts.some(a => a.cls === "crit") ? "crit" : "warn") + '">' + alerts.length + "</span></div><div class='card'>" +
+      alerts.map(a =>
+        '<div class="row" ' + (a.kind === "doc" ? 'data-alert-truck="' + a.truckId + '"' : 'data-alert-order="' + a.orderId + '"') + ' style="cursor:pointer">' +
+        '<span class="sev-stripe ' + (a.cls === "crit" ? "sev-alta" : "sev-media") + '"></span><div class="rl"><div class="t">' + iconSpan(a.kind === "doc" ? "doc" : "wrench") + esc(a.text) + "</div></div><span class='arrow'>" + I.arrow + "</span></div>"
+      ).join("") + "</div></div>"
     : "";
 
   const navBtns = ['<button class="btn btn-ghost" id="nav-camiones" style="flex:1;min-width:140px">' + I.truck + "Camiones</button>"];
   if (can(p, "reports.view")) navBtns.push('<button class="btn btn-ghost" id="nav-reportes" style="flex:1;min-width:140px">' + I.chart + "Indicadores</button>");
   if (can(p, "user.manage")) navBtns.push('<button class="btn btn-ghost" id="nav-usuarios" style="flex:1;min-width:140px">' + I.users + "Usuarios</button>");
+  if (can(p, "user.manage")) navBtns.push('<button class="btn btn-ghost" id="nav-empresa" style="flex:1;min-width:140px">' + I.gear + "Empresa</button>");
   const navRow = '<div class="section" style="display:flex;flex-wrap:wrap;gap:10px">' + navBtns.join("") + "</div>";
 
   const fallaCards = !can(p, "falla.view") ? "" :
@@ -145,13 +157,15 @@ async function dashboard(view, ctx) {
   const done = orders.filter(o => o.estado === "completado").sort((a, b) => b.completedAt - a.completedAt).slice(0, 4);
   const doneBlock = done.length ? '<div class="section"><span class="eyebrow">Últimas completadas</span><div class="card" style="margin-top:8px">' + done.map(o => orderRow(o, trucks)).join("") + "</div></div>" : "";
 
-  view.innerHTML = docBanner + kpis + availBoard + navRow + fallaCards + orderCards + doneBlock;
+  view.innerHTML = alertsSection + kpis + availBoard + navRow + fallaCards + orderCards + doneBlock;
 
   $$("[data-avail]", view).forEach(b => b.onclick = () => availSheet(ctx, b.getAttribute("data-avail"), trucks, orders, fallas));
+  $$("[data-alert-truck]", view).forEach(b => b.onclick = () => ctx.go("truckDetail", { id: b.getAttribute("data-alert-truck") }));
+  $$("[data-alert-order]", view).forEach(b => b.onclick = () => { orderDraft = null; ctx.go("order", { id: b.getAttribute("data-alert-order") }); });
   $("#nav-camiones", view).onclick = () => ctx.go("camiones", {});
   const nr = $("#nav-reportes", view); if (nr) nr.onclick = () => ctx.go("reportes", {});
   const nu = $("#nav-usuarios", view); if (nu) nu.onclick = () => ctx.go("usuarios", {});
-  const db = $("#doc-banner", view); if (db) db.onclick = () => ctx.go("camiones", {});
+  const ne = $("#nav-empresa", view); if (ne) ne.onclick = () => ctx.go("empresa", {});
   $$("[data-order]", view).forEach(b => b.onclick = () => createOrder(ctx, b.getAttribute("data-order"), fallas));
   $$("[data-resolve]", view).forEach(b => b.onclick = () => resolveFalla(ctx, b.getAttribute("data-resolve")));
   $$("[data-openorder]", view).forEach(b => b.onclick = () => { orderDraft = null; ctx.go("order", { id: b.getAttribute("data-openorder") }); });
@@ -206,9 +220,12 @@ function availSheet(ctx, truckId, trucks, orders, fallas) {
       body += '<button class="btn btn-primary" style="margin-top:14px" id="av-crear">' + I.wrench + "Crear orden de taller</button>";
   }
 
+  body += '<button class="btn btn-soft" style="margin-top:10px" id="av-resumen">' + I.chart + "Ver resumen del camión</button>";
+
   openSheet("Disponibilidad · " + t.num, body, () => {
     const bo = $("#av-order"); if (bo) bo.onclick = () => { closeSheet(); orderDraft = null; ctx.go("order", { id: a.order.id }); };
     const bc = $("#av-crear"); if (bc) bc.onclick = () => { const fs = fallas.filter(f => f.truckId === truckId); closeSheet(); createOrder(ctx, fs[0].id, fallas); };
+    const br = $("#av-resumen"); if (br) br.onclick = () => { closeSheet(); ctx.go("resumen", { id: truckId, from: "home" }); };
   });
 }
 function row2(k, v) {

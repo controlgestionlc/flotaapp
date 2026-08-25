@@ -26,6 +26,13 @@ service cloud.firestore {
       return isActive() && (role() in roles);
     }
 
+    // Datos de la empresa (branding). Lectura pública (nombre y logo);
+    // solo el administrador puede editar.
+    match /config/{id} {
+      allow read: if true;
+      allow write: if hasRole(['administrador']);
+    }
+
     // Perfiles de usuario
     match /users/{uid} {
       // Cada quien lee su propio perfil; supervisor/gerente/admin leen todos.

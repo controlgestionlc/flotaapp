@@ -3,11 +3,15 @@ import { I, esc, toggleTheme } from "./ui.js";
 
 export async function renderLogin(host, ctx, onLogin) {
   const demo = store.mode === "demo";
+  const co = ctx.company ? ctx.company() : { nombre: "Transportes La Cabaña", app: "Bitácora de Camiones", logo: "" };
+  const logo = co.logo
+    ? '<div class="login-logo" style="background:var(--surface-2);border:1px solid var(--line);overflow:hidden"><img src="' + esc(co.logo) + '" alt="logo" style="width:100%;height:100%;object-fit:cover"></div>'
+    : '<div class="login-logo"><svg viewBox="0 0 24 24" fill="none" stroke="#F5871F" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h11v10H2z"/><path d="M13 9h4l3 3v4h-7z"/><circle cx="6.5" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></svg></div>';
   host.innerHTML =
     '<div class="login-wrap">' +
-      '<div class="login-logo"><svg viewBox="0 0 24 24" fill="none" stroke="#F5871F" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h11v10H2z"/><path d="M13 9h4l3 3v4h-7z"/><circle cx="6.5" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></svg></div>' +
-      '<span class="eyebrow">La Cabaña Forestal</span>' +
-      '<h1 style="font-size:1.9rem;margin:6px 0 4px">Bitácora de Flota</h1>' +
+      logo +
+      '<span class="eyebrow">' + esc(co.nombre) + "</span>" +
+      '<h1 style="font-size:1.9rem;margin:6px 0 4px">' + esc(co.app) + "</h1>" +
       '<p class="meta-line" style="margin:0 0 22px">Ingresa con tus credenciales para continuar.</p>' +
       '<label class="fld"><span class="lb">Correo</span><input class="input" id="lg-email" type="email" autocomplete="username" placeholder="tucorreo@lacabana.cl" value="' + (demo ? "conductor@lacabana.cl" : "") + '"></label>' +
       '<label class="fld"><span class="lb">Contraseña</span><input class="input" id="lg-pass" type="password" autocomplete="current-password" placeholder="••••••••" value="' + (demo ? "chofer123" : "") + '"></label>' +

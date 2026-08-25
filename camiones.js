@@ -64,9 +64,11 @@ async function truckDetail(view, ctx) {
     (t.anio ? '<span class="meta-line">Año ' + t.anio + "</span>" : "") +
     '<span class="pill ' + (t.activo === false ? "neutral" : "ok") + '"><span class="dot"></span>' + (t.activo === false ? "Inactivo" : "Activo") + "</span></div></div></div></div>" +
     '<div class="section"><span class="eyebrow">Documentación</span><div class="card pad" style="margin-top:8px">' + docs + "</div></div>" +
+    '<button class="btn btn-soft section" id="td-resumen">' + I.chart + "Ver resumen operativo</button>" +
     (manage ? '<button class="btn btn-ghost" id="td-edit">' + I.doc + "Editar datos y documentos</button>" : "");
 
   $("#td-back", view).onclick = () => ctx.go("camiones", {});
+  $("#td-resumen", view).onclick = () => ctx.go("resumen", { id: t.id, from: "camiones" });
   const eb = $("#td-edit", view); if (eb) eb.onclick = () => { form = null; ctx.go("truckForm", { id: t.id }); };
 }
 

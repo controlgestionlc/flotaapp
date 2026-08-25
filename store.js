@@ -87,7 +87,8 @@ function demoAdapter() {
       { id: "tr2", truckId: "t2", uid: "u_chofer", deviceId: "seed", driverNombre: "José Muñoz", origen: "Predio Santa Ana", salida: now - 1*D, predio: "Santa Ana", plantaDestino: "Planta Collipulli", volumen: 28, unidad: "MR", guiaDespacho: "GD-45233", llegada: now - 1*D + 2*H, gmm: "GMM-8851", ts: now - 1*D }
     ];
     const devices = [];
-    return { users, devices, trucks, checklists, bitacora, orders, fuel, trips };
+    const config = [{ id: "empresa", nombre: "Transportes La Cabaña", app: "Bitácora de Camiones", logo: "" }];
+    return { users, devices, trucks, checklists, bitacora, orders, fuel, trips, config };
   }
 
   let db = load();
@@ -255,6 +256,14 @@ export const store = {
       });
     } catch (e) { /* dispositivos es best-effort */ }
   },
+
+  // --- empresa (branding editable) ---
+  async getCompany() {
+    let c = null;
+    try { c = await A.get("config", "empresa"); } catch (e) { c = null; }
+    return Object.assign({ nombre: "Transportes La Cabaña", app: "Bitácora de Camiones", logo: "" }, c || {});
+  },
+  async saveCompany(data) { return A.set("config", "empresa", Object.assign({ id: "empresa" }, data)); },
 
   // --- usuarios ---
   async listUsers() { return (await A.list("users")).sort((a,b)=> (a.nombre||"").localeCompare(b.nombre||"")); },
