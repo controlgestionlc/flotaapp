@@ -11,6 +11,7 @@
 // =============================================================
 
 import { FIREBASE_CONFIG, FIREBASE_SDK, isConfigured } from "./config.js";
+import { PRODUCTS_BASE } from "./productos-base.js";
 
 // ---- deviceId persistente por navegador/dispositivo ----
 function ensureDeviceId() {
@@ -83,12 +84,13 @@ function demoAdapter() {
       { id: "fu3", truckId: "t2", uid: "u_chofer", deviceId: "seed", driverNombre: "José Muñoz", fecha: now - 4*D,  km: 284000, litros: 280, precioLitro: 965, estacion: "Petrobras Renaico", total: 270200, ts: now - 4*D }
     ];
     const trips = [
-      { id: "tr1", truckId: "t1", uid: "u_chofer", deviceId: "seed", driverNombre: "José Muñoz", origen: "Predio El Roble", salida: now - 2*D, predio: "El Roble", plantaDestino: "Aserradero Mininco", volumen: 32, unidad: "M3", guiaDespacho: "GD-45210", llegada: now - 2*D + 3*H, gmm: "GMM-8842", ts: now - 2*D },
-      { id: "tr2", truckId: "t2", uid: "u_chofer", deviceId: "seed", driverNombre: "José Muñoz", origen: "Predio Santa Ana", salida: now - 1*D, predio: "Santa Ana", plantaDestino: "Planta Collipulli", volumen: 28, unidad: "MR", guiaDespacho: "GD-45233", llegada: now - 1*D + 2*H, gmm: "GMM-8851", ts: now - 1*D }
+      { id: "tr1", truckId: "t1", uid: "u_chofer", deviceId: "seed", driverNombre: "José Muñoz", estado: "cerrado", origen: "Camino El Roble km 4", predio: "El Roble", producto: { codigo: "TRAS-3.20 (1)", descripcion: "TROZO PINO ASERRABLE 3.20 MTS", especie: "PINO", um: "M3" }, volumen: 32, unidad: "M3", guiaDespacho: "GD-45210", salida: now - 2*D, salidaGps: { lat:-37.803, lng:-72.712, acc:11, ts: now-2*D }, plantaDestino: "Aserradero Mininco", llegada: now - 2*D + 3*H, llegadaGps: { lat:-37.912, lng:-72.418, acc:9, ts: now-2*D+3*H }, gmm: "GMM-8842", ts: now - 2*D },
+      { id: "tr2", truckId: "t2", uid: "u_chofer", deviceId: "seed", driverNombre: "José Muñoz", estado: "cerrado", origen: "Camino Santa Ana", predio: "Santa Ana", producto: { codigo: "3232", descripcion: "MR EUCALYPTUS GLOBULUS 3,50 C/C", especie: "EUCALYPTUS", um: "MR" }, volumen: 28, unidad: "MR", guiaDespacho: "GD-45233", salida: now - 1*D, salidaGps: null, plantaDestino: "Planta Collipulli", llegada: now - 1*D + 2*H, llegadaGps: null, gmm: "GMM-8851", ts: now - 1*D }
     ];
+    const products = PRODUCTS_BASE.map((p, i) => ({ id: "pr" + (i + 1), codigo: p.codigo, descripcion: p.descripcion, especie: p.especie, um: p.um }));
     const devices = [];
     const config = [{ id: "empresa", nombre: "Transportes La Cabaña", app: "Bitácora de Camiones", logo: "" }];
-    return { users, devices, trucks, checklists, bitacora, orders, fuel, trips, config };
+    return { users, devices, trucks, checklists, bitacora, orders, fuel, trips, products, config };
   }
 
   let db = load();
@@ -296,6 +298,12 @@ export const store = {
   // --- viajes ---
   async listTrips() { return (await A.list("trips")).sort((a, b) => (b.salida || b.ts) - (a.salida || a.ts)); },
   async addTrip(data) { return A.add("trips", data); },
+  async saveTrip(id, data) { await A.set("trips", id, data); return id; },
+
+  // --- productos trasladados ---
+  async listProducts() { return (await A.list("products")).sort((a, b) => (a.codigo || "").localeCompare(b.codigo || "")); },
+  async addProduct(data) { return A.add("products", data); },
+  async saveProduct(id, data) { await A.set("products", id, data); return id; },
 
   // --- fallas descartadas ---
   async listResolved() { return (await A.list("resolved")).map(r => r.id); },

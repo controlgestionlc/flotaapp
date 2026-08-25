@@ -83,13 +83,21 @@ service cloud.firestore {
       allow update, delete: if hasRole(['administrador']);
     }
 
-    // Viajes realizados
+    // Viajes realizados (2 etapas: el dueño puede cerrar el suyo)
     match /trips/{id} {
       allow read: if isActive();
       allow create: if isActive()
                     && request.resource.data.uid == request.auth.uid
                     && hasRole(['conductor','supervisor','administrador']);
-      allow update, delete: if hasRole(['administrador']);
+      allow update: if isActive()
+                    && (resource.data.uid == request.auth.uid || hasRole(['supervisor','administrador']));
+      allow delete: if hasRole(['administrador']);
+    }
+
+    // Productos trasladados (lista editable por supervisor/administrador)
+    match /products/{id} {
+      allow read: if isActive();
+      allow create, update, delete: if hasRole(['supervisor','administrador']);
     }
 
     // Órdenes de taller y costos

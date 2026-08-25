@@ -24,6 +24,7 @@ export const PERMISSIONS = {
   "fleet.view":       "Ver el estado de toda la flota",
   "falla.view":       "Ver las fallas reportadas",
   "truck.manage":     "Registrar y editar camiones y su documentación",
+  "product.manage":   "Administrar la lista de productos trasladados",
   "order.manage":     "Crear y gestionar órdenes de taller y costos",
   "reports.view":     "Ver reportes, indicadores y costos",
   "user.manage":      "Administrar usuarios y roles"
@@ -36,7 +37,7 @@ const ROLE_PERMISSIONS = {
     "truck.select", "history.own"
   ],
   supervisor: [
-    "fleet.view", "falla.view", "truck.manage", "order.manage",
+    "fleet.view", "falla.view", "truck.manage", "product.manage", "order.manage",
     "reports.view", "fuel.create", "trip.create", "history.own"
   ],
   gerente: [
@@ -45,7 +46,7 @@ const ROLE_PERMISSIONS = {
   administrador: [
     "checklist.create", "bitacora.create", "fuel.create", "trip.create",
     "truck.select", "history.own",
-    "fleet.view", "falla.view", "truck.manage", "order.manage",
+    "fleet.view", "falla.view", "truck.manage", "product.manage", "order.manage",
     "reports.view", "user.manage"
   ]
 };

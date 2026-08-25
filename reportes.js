@@ -57,8 +57,8 @@ export async function renderReportes(view, ctx) {
       "</div>";
     const tripList = tripsR.slice().sort((a, b) => (b.salida || b.ts) - (a.salida || a.ts)).slice(0, 6).map(v => {
       const t = trucks.find(x => x.id === v.truckId) || { num: "?" };
-      return '<div class="row"><div class="rl"><div class="t">' + iconSpan("route") + esc(t.num) + " · " + esc(v.predio || v.origen || "") + " → " + esc(v.plantaDestino || "") + "</div>" +
-        '<div class="m"><span class="num">' + nf(v.volumen) + " " + esc(v.unidad || "") + "</span>" + (v.guiaDespacho ? "<span>" + esc(v.guiaDespacho) + "</span>" : "") + "<span>" + fmtDateTime(v.salida || v.ts) + "</span></div></div></div>";
+      return '<div class="row"><div class="rl"><div class="t">' + iconSpan("route") + esc(t.num) + " · " + esc(v.predio || v.origen || "") + " → " + esc(v.plantaDestino || "(sin cerrar)") + (v.estado !== "cerrado" ? ' <span class="pill warn">Abierto</span>' : "") + "</div>" +
+        '<div class="m"><span class="num">' + nf(v.volumen) + " " + esc(v.unidad || "") + "</span>" + (v.producto ? "<span>" + esc(v.producto.descripcion) + "</span>" : "") + (v.guiaDespacho ? "<span>" + esc(v.guiaDespacho) + "</span>" : "") + "<span>" + fmtDateTime(v.salida || v.ts) + "</span></div></div></div>";
     }).join("");
 
     const filtro = '<div class="card pad section"><span class="eyebrow" style="display:block;margin-bottom:8px">Período</span>' +
@@ -140,7 +140,10 @@ function exportFuel(fuel, trucks) {
 }
 function exportTrips(trips, trucks) {
   const tm = id => (trucks.find(x => x.id === id) || {});
-  const rows = [["Salida", "Llegada", "Camion", "Patente", "Conductor", "Origen", "Predio", "PlantaDestino", "Volumen", "Unidad", "GuiaDespacho", "GMM"]];
-  trips.slice().sort((a, b) => (a.salida || a.ts) - (b.salida || b.ts)).forEach(v => { const t = tm(v.truckId); rows.push([csvDate(v.salida), csvDate(v.llegada), t.num || "", t.patente || "", v.driverNombre || "", v.origen || "", v.predio || "", v.plantaDestino || "", v.volumen || "", v.unidad || "", v.guiaDespacho || "", v.gmm || ""]); });
+  const rows = [["Salida", "Llegada", "Estado", "Camion", "Patente", "Conductor", "Origen", "Predio", "Producto", "Especie", "PlantaDestino", "Volumen", "Unidad", "GuiaDespacho", "GMM"]];
+  trips.slice().sort((a, b) => (a.salida || a.ts) - (b.salida || b.ts)).forEach(v => {
+    const t = tm(v.truckId), pr = v.producto || {};
+    rows.push([csvDate(v.salida), csvDate(v.llegada), v.estado === "cerrado" ? "Cerrado" : "Abierto", t.num || "", t.patente || "", v.driverNombre || "", v.origen || "", v.predio || "", (pr.codigo ? pr.codigo + " " : "") + (pr.descripcion || ""), pr.especie || "", v.plantaDestino || "", v.volumen || "", v.unidad || "", v.guiaDespacho || "", v.gmm || ""]);
+  });
   download("viajes.csv", toCSV(rows)); toast("Exportado viajes.csv", "ok");
 }

@@ -12,6 +12,7 @@ import { renderUsuarios } from "./usuarios.js";
 import { renderReportes } from "./reportes.js";
 import { renderEmpresa } from "./empresa.js";
 import { renderResumen } from "./resumen.js";
+import { renderProductos } from "./productos.js";
 
 const APP = document.getElementById("app");
 
@@ -89,6 +90,10 @@ async function routeTo(view) {
   if (r === "empresa") {
     if (!can(p, "user.manage")) { ctx.route = "home"; return renderPanel(view, ctx); }
     return renderEmpresa(view, ctx);
+  }
+  if (r === "productos") {
+    if (!can(p, "product.manage")) { ctx.route = "home"; return renderPanel(view, ctx); }
+    return renderProductos(view, ctx);
   }
   if (r === "reportes") {
     if (!can(p, "reports.view")) { ctx.route = "home"; return renderPanel(view, ctx); }
