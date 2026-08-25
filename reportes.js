@@ -1,5 +1,5 @@
 import { store } from "./store.js";
-import { I, esc, fmtCLP, fmtDate, fmtDateTime, dInput, iconSpan, emptyBox, toast, $, $$ } from "./ui.js";
+import { I, esc, fmtCLP, fmtDate, fmtDateTime, dInput, iconSpan, emptyBox, toast, openSheet, closeSheet, $, $$ } from "./ui.js";
 
 export async function renderReportes(view, ctx) {
   view.innerHTML = '<button class="backlink" id="rp-back">' + I.back + ' Panel</button><div class="meta-line" style="padding:20px 2px">Cargando indicadores...</div>';
@@ -29,10 +29,10 @@ export async function renderReportes(view, ctx) {
     const rendProm = conRend.length ? conRend.reduce((s, x) => s + x.s.rend, 0) / conRend.length : 0;
 
     const fuelKpis = '<div class="kpis section">' +
-      kpi("a", fmtCLP(gasto), "Gasto combustible", "en el período") +
-      kpi("a", nf(litros) + " L", "Litros", "cargados") +
-      kpi("a", precioProm ? fmtCLP(precioProm) : "-", "Precio promedio", "por litro") +
-      kpi(rendProm ? "g" : "a", rendProm ? nf(rendProm, 2) : "-", "Rendimiento", "promedio km/L") +
+      kpi("a", fmtCLP(gasto), "Gasto combustible", "en el período", "gasto") +
+      kpi("a", nf(litros) + " L", "Litros", "cargados", "litros") +
+      kpi("a", precioProm ? fmtCLP(precioProm) : "-", "Precio promedio", "por litro", "precio") +
+      kpi(rendProm ? "g" : "a", rendProm ? nf(rendProm, 2) : "-", "Rendimiento", "promedio km/L", "rend") +
       "</div>";
     const fuelRows = stats.map(({ t, s }) => {
       const al = fuelAlert(s);
@@ -50,10 +50,10 @@ export async function renderReportes(view, ctx) {
     const m3 = tripsR.filter(v => v.unidad === "M3").reduce((s, v) => s + (Number(v.volumen) || 0), 0);
     const mr = tripsR.filter(v => v.unidad === "MR").reduce((s, v) => s + (Number(v.volumen) || 0), 0);
     const tripKpis = '<div class="kpis section">' +
-      kpi("a", String(tripsR.length), "Viajes", "en el período") +
-      kpi("a", nf(m3) + " M3", "Volumen M3", "transportado") +
-      kpi("a", nf(mr) + " MR", "Volumen MR", "transportado") +
-      kpi("a", String(new Set(tripsR.map(v => v.plantaDestino).filter(Boolean)).size), "Plantas destino", "distintas") +
+      kpi("a", String(tripsR.length), "Viajes", "en el período", "viajes") +
+      kpi("a", nf(m3) + " M3", "Volumen M3", "transportado", "m3") +
+      kpi("a", nf(mr) + " MR", "Volumen MR", "transportado", "mr") +
+      kpi("a", String(new Set(tripsR.map(v => v.plantaDestino).filter(Boolean)).size), "Plantas destino", "distintas", "plantas") +
       "</div>";
     const tripList = tripsR.slice().sort((a, b) => (b.salida || b.ts) - (a.salida || a.ts)).slice(0, 6).map(v => {
       const t = trucks.find(x => x.id === v.truckId) || { num: "?" };
@@ -85,12 +85,44 @@ export async function renderReportes(view, ctx) {
     $("#rp-hasta", view).onchange = e => { range.hasta = e.target.value; paint(); };
     $("#exp-fuel", view).onclick = () => exportFuel(fuelR, trucks);
     $("#exp-trips", view).onclick = () => exportTrips(tripsR, trucks);
+    $$("[data-kpi]", view).forEach(b => b.onclick = () => kpiDetailRep(b.getAttribute("data-kpi")));
+
+    function kpiDetailRep(k) {
+      const fuelRow = f => { const t = trucks.find(x => x.id === f.truckId) || { num: "?" };
+        return '<div class="row"><div class="rl"><div class="t">' + iconSpan("fuel") + esc(t.num) + " · " + nf(f.litros) + " L · " + fmtCLP(f.total) + '</div><div class="m"><span>' + esc(f.estacion || "") + "</span><span>$" + nf(f.precioLitro) + "/L</span><span class='num'>" + nf(f.km) + " km</span><span>" + fmtDate(f.fecha || f.ts) + "</span></div></div></div>"; };
+      const tripRow = v => { const t = trucks.find(x => x.id === v.truckId) || { num: "?" };
+        return '<div class="row"><div class="rl"><div class="t">' + iconSpan("route") + esc(t.num) + " · " + esc(v.predio || v.origen || "") + " → " + esc(v.plantaDestino || "(sin cerrar)") + '</div><div class="m"><span class="num">' + nf(v.volumen) + " " + esc(v.unidad || "") + "</span>" + (v.producto ? "<span>" + esc(v.producto.descripcion) + "</span>" : "") + "<span>" + fmtDateTime(v.salida || v.ts) + "</span></div></div></div>"; };
+      const fuelSorted = fuelR.slice().sort((a, b) => (b.fecha || b.ts) - (a.fecha || a.ts));
+      const tripSorted = tripsR.slice().sort((a, b) => (b.salida || b.ts) - (a.salida || a.ts));
+      let title = "", body = "";
+      if (k === "gasto" || k === "litros" || k === "precio") {
+        title = k === "gasto" ? "Gasto de combustible" : k === "litros" ? "Litros cargados" : "Precio por litro";
+        body = (k === "precio" ? '<p class="meta-line" style="padding:0 2px 10px">Promedio ponderado: gasto total dividido por litros totales del período.</p>' : "") +
+          (fuelSorted.length ? fuelSorted.map(fuelRow).join("") : '<div class="empty">' + I.fuel + "<div>Sin cargas en el período</div></div>");
+      } else if (k === "rend") {
+        title = "Rendimiento por camión";
+        body = stats.map(({ t, s }) => '<div class="row"><span class="trucknum">' + esc(t.num) + '</span><div class="rl"><div class="t">' + esc(t.marca + " " + (t.modelo || "")) + '</div><div class="m"><span>Rend: ' + (s.rend ? nf(s.rend, 2) + " km/L" : "s/d") + "</span><span>$/km: " + (s.costoKm ? fmtCLP(s.costoKm) : "s/d") + "</span></div></div></div>").join("");
+      } else if (k === "viajes") {
+        title = "Viajes del período";
+        body = tripSorted.length ? tripSorted.map(tripRow).join("") : '<div class="empty">' + I.route + "<div>Sin viajes</div></div>";
+      } else if (k === "m3" || k === "mr") {
+        const u = k.toUpperCase(); title = "Viajes en " + u;
+        const list = tripSorted.filter(v => v.unidad === u);
+        body = list.length ? list.map(tripRow).join("") : '<div class="empty">' + I.route + "<div>Sin viajes en " + u + "</div></div>";
+      } else if (k === "plantas") {
+        title = "Plantas destino";
+        const map = {}; tripsR.forEach(v => { if (v.plantaDestino) { map[v.plantaDestino] = map[v.plantaDestino] || { n: 0, vol: 0 }; map[v.plantaDestino].n++; map[v.plantaDestino].vol += Number(v.volumen) || 0; } });
+        const keys = Object.keys(map).sort((a, b) => map[b].n - map[a].n);
+        body = keys.length ? keys.map(name => '<div class="row"><div class="rl"><div class="t">' + esc(name) + '</div><div class="m"><span>' + map[name].n + " viaje(s)</span><span class='num'>vol " + nf(map[name].vol) + "</span></div></div></div>").join("") : '<div class="empty">Sin destinos</div>';
+      }
+      openSheet(title, '<div class="card" style="box-shadow:none;border:0">' + body + "</div>");
+    }
   }
   paint();
 }
 
-function kpi(cls, val, lab, sub) {
-  return '<div class="kpi ' + cls + '"><span class="stripe"></span><div class="lab">' + esc(lab) + '</div><div class="val num" style="font-size:1.5rem">' + esc(val) + '</div><div class="sub">' + esc(sub) + "</div></div>";
+function kpi(cls, val, lab, sub, key) {
+  return '<div class="kpi ' + cls + '"' + (key ? ' data-kpi="' + key + '" style="cursor:pointer"' : "") + '><span class="stripe"></span><div class="lab">' + esc(lab) + '</div><div class="val num" style="font-size:1.5rem">' + esc(val) + '</div><div class="sub">' + esc(sub) + "</div></div>";
 }
 function nf(n, dec) { return (Number(n) || 0).toLocaleString("es-CL", { maximumFractionDigits: dec || 0 }); }
 

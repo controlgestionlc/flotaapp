@@ -101,10 +101,10 @@ async function dashboard(view, ctx) {
   const mesTotal = orders.filter(o => o.estado === "completado" && monthKey(o.completedAt) === monthKey()).reduce((s, o) => s + orderTotal(o), 0);
 
   const kpis = '<div class="kpis section">' +
-    kpi("a", operativos + "/" + trucks.length, "Operativos", "camiones sin novedad") +
-    kpi(fallas.length ? "c" : "g", String(fallas.length), "Fallas por gestionar", fallas.length ? "requieren acción" : "todo al día") +
-    kpi("w", String(openOrders.length), "Órdenes abiertas", "en proceso o agendadas") +
-    kpi("a", fmtCLP(mesTotal), "Costo del mes", "taller completado") +
+    kpi("a", operativos + "/" + trucks.length, "Operativos", "camiones sin novedad", "operativos") +
+    kpi(fallas.length ? "c" : "g", String(fallas.length), "Fallas por gestionar", fallas.length ? "requieren acción" : "todo al día", "fallas") +
+    kpi("w", String(openOrders.length), "Órdenes abiertas", "en proceso o agendadas", "ordenes") +
+    kpi("a", fmtCLP(mesTotal), "Costo del mes", "taller completado", "costo") +
     "</div>";
 
   const availRows = avail.map(({ t, a }) =>
@@ -161,6 +161,7 @@ async function dashboard(view, ctx) {
   view.innerHTML = alertsSection + kpis + availBoard + navRow + fallaCards + orderCards + doneBlock;
 
   $$("[data-avail]", view).forEach(b => b.onclick = () => availSheet(ctx, b.getAttribute("data-avail"), trucks, orders, fallas));
+  $$("[data-kpi]", view).forEach(b => b.onclick = () => kpiDetail(ctx, b.getAttribute("data-kpi"), { trucks, orders, fallas, avail, openOrders, mesTotal }));
   $$("[data-alert-truck]", view).forEach(b => b.onclick = () => ctx.go("truckDetail", { id: b.getAttribute("data-alert-truck") }));
   $$("[data-alert-order]", view).forEach(b => b.onclick = () => { orderDraft = null; ctx.go("order", { id: b.getAttribute("data-alert-order") }); });
   $("#nav-camiones", view).onclick = () => ctx.go("camiones", {});
@@ -173,8 +174,39 @@ async function dashboard(view, ctx) {
   $$("[data-openorder]", view).forEach(b => b.onclick = () => { orderDraft = null; ctx.go("order", { id: b.getAttribute("data-openorder") }); });
 }
 
-function kpi(cls, val, lab, sub) {
-  return '<div class="kpi ' + cls + '"><span class="stripe"></span><div class="lab">' + esc(lab) + '</div><div class="val num">' + esc(val) + '</div><div class="sub">' + esc(sub) + "</div></div>";
+function kpi(cls, val, lab, sub, key) {
+  return '<div class="kpi ' + cls + '"' + (key ? ' data-kpi="' + key + '" style="cursor:pointer"' : "") + '><span class="stripe"></span><div class="lab">' + esc(lab) + '</div><div class="val num">' + esc(val) + '</div><div class="sub">' + esc(sub) + "</div></div>";
+}
+
+// Ficha de detalle al tocar un KPI del panel.
+function kpiDetail(ctx, key, D) {
+  let title = "", body = "";
+  if (key === "operativos") {
+    title = "Disponibilidad de la flota";
+    body = D.avail.map(({ t, a }) =>
+      '<div class="row" data-k-truck="' + t.id + '" style="cursor:pointer"><span class="trucknum">' + esc(t.num) + '</span><div class="rl"><div class="t">' + esc(t.marca + " " + (t.modelo || "")) + '</div><div class="m"><span>' + esc(t.patente) + '</span></div></div><span class="pill ' + a.cls + '"><span class="dot"></span>' + a.label + "</span></div>").join("");
+  } else if (key === "fallas") {
+    title = "Fallas por gestionar";
+    body = D.fallas.length ? D.fallas.map(f => { const t = D.trucks.find(x => x.id === f.truckId) || { num: "?" };
+      return '<div class="row"><span class="sev-stripe sev-' + f.sev + '"></span><div class="rl"><div class="t">' + esc(f.titulo) + '</div><div class="m"><span>' + esc(t.num) + "</span><span>" + esc(f.origen) + "</span><span>" + fmtDateTime(f.ts) + "</span></div></div></div>"; }).join("")
+      : '<div class="empty">' + I.check + "<div>Sin fallas pendientes</div></div>";
+  } else if (key === "ordenes") {
+    title = "Órdenes de taller abiertas";
+    body = D.openOrders.length ? D.openOrders.map(o => { const t = D.trucks.find(x => x.id === o.truckId) || { num: "?" };
+      return '<div class="row" data-k-order="' + o.id + '" style="cursor:pointer"><div class="rl"><div class="t">' + esc(o.titulo) + ' <span class="pill ' + EST[o.estado].c + '">' + EST[o.estado].l + '</span></div><div class="m"><span>' + esc(t.num) + "</span>" + (o.taller ? "<span>" + esc(o.taller) + "</span>" : "") + (o.otNumero ? "<span>" + esc(o.otNumero) + "</span>" : "") + "</div></div><span class='arrow'>" + I.arrow + "</span></div>"; }).join("")
+      : '<div class="empty">' + I.wrench + "<div>Sin órdenes abiertas</div></div>";
+  } else if (key === "costo") {
+    title = "Costo de taller del mes";
+    const done = D.orders.filter(o => o.estado === "completado" && monthKey(o.completedAt) === monthKey());
+    body = (done.length ? done.map(o => { const t = D.trucks.find(x => x.id === o.truckId) || { num: "?" };
+      return '<div class="row" data-k-order="' + o.id + '" style="cursor:pointer"><div class="rl"><div class="t">' + esc(o.titulo) + '</div><div class="m"><span>' + esc(t.num) + "</span>" + (o.taller ? "<span>" + esc(o.taller) + "</span>" : "") + "<span>" + fmtDate(o.completedAt) + "</span></div></div><b class='num'>" + fmtCLP(orderTotal(o)) + "</b></div>"; }).join("")
+      : '<div class="empty">' + I.cash + "<div>Sin gasto este mes</div></div>") +
+      '<div class="row" style="background:var(--surface-2)"><div class="rl"><div class="t">Total del mes</div></div><b class="num" style="font-size:1.1rem">' + fmtCLP(D.mesTotal) + "</b></div>";
+  }
+  openSheet(title, '<div class="card" style="box-shadow:none;border:0">' + body + "</div>", () => {
+    $$("[data-k-truck]").forEach(b => b.onclick = () => { closeSheet(); ctx.go("resumen", { id: b.getAttribute("data-k-truck"), from: "home" }); });
+    $$("[data-k-order]").forEach(b => b.onclick = () => { closeSheet(); orderDraft = null; ctx.go("order", { id: b.getAttribute("data-k-order") }); });
+  });
 }
 function orderRow(o, trucks) {
   const t = trucks.find(x => x.id === o.truckId) || { num: "?" };
