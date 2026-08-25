@@ -88,9 +88,10 @@ function buildAlerts(trucks, orders) {
 
 async function dashboard(view, ctx) {
   const p = ctx.profile;
-  const [trucks, cks, bits, orders, resolved, fuel] = await Promise.all([
-    store.listTrucks(), store.listChecklists(), store.listBitacora(), store.listOrders(), store.listResolved(), store.listFuel()
+  const [trucks, cks, bits, orders, resolvedDocs, fuel] = await Promise.all([
+    store.listTrucks(), store.listChecklists(), store.listBitacora(), store.listOrders(), store.listResolvedDocs(), store.listFuel()
   ]);
+  const resolved = resolvedDocs.map(r => r.id);
   const fallas = openFallas(cks, bits, orders, resolved);
   const manage = can(p, "order.manage");
   const avail = trucks.map(t => ({ t, a: availStatus(t.id, orders, fallas) }));
@@ -155,6 +156,18 @@ async function dashboard(view, ctx) {
       }).join("") : '<div class="empty">' + I.check + "<div>No hay fallas pendientes. Flota al día.</div></div>") +
       "</div></div>");
 
+  const descRecientes = resolvedDocs.slice(0, 5);
+  const descBlock = (!can(p, "falla.view") || !descRecientes.length) ? "" :
+    ('<div class="section"><span class="eyebrow">Fallas descartadas (' + resolvedDocs.length + ')</span><div class="card" style="margin-top:8px">' +
+      descRecientes.map(r => {
+        const t = trucks.find(x => x.id === r.truckId) || { num: "?", patente: "" };
+        return '<div class="row"><span class="sev-stripe sev-baja"></span><div class="rl">' +
+          '<div class="t" style="text-decoration:line-through;color:var(--ink-2)">' + esc(r.titulo || "Falla") + "</div>" +
+          '<div class="m"><span>' + iconSpan("truck") + esc(t.num) + "</span>" + (r.driverFalla ? "<span>Reportó: " + esc(r.driverFalla) + "</span>" : "") + "<span>" + fmtDateTime(r.ts) + "</span></div>" +
+          '<div style="font-size:.86rem;margin-top:4px;color:var(--ink-2)">Descartada por ' + esc(r.por || "?") + (r.motivo ? ": " + esc(r.motivo) : "") + "</div>" +
+          "</div></div>";
+      }).join("") + "</div></div>");
+
   const openList = openOrders.sort((a, b) => b.createdAt - a.createdAt);
   const orderCards = '<div class="section"><div class="subhead"><h2>Órdenes de taller</h2><span class="pill steel">' + openOrders.length + ' abiertas</span></div><div class="card">' +
     (openList.length ? openList.map(o => orderRow(o, trucks)).join("") : '<div class="empty">' + I.wrench + "<div>Sin órdenes de taller abiertas</div></div>") + "</div></div>";
@@ -162,7 +175,7 @@ async function dashboard(view, ctx) {
   const done = orders.filter(o => o.estado === "completado").sort((a, b) => b.completedAt - a.completedAt).slice(0, 4);
   const doneBlock = done.length ? '<div class="section"><span class="eyebrow">Últimas completadas</span><div class="card" style="margin-top:8px">' + done.map(o => orderRow(o, trucks)).join("") + "</div></div>" : "";
 
-  view.innerHTML = alertsSection + kpis + availBoard + navRow + fallaCards + orderCards + doneBlock;
+  view.innerHTML = alertsSection + kpis + availBoard + navRow + fallaCards + descBlock + orderCards + doneBlock;
 
   $$("[data-avail]", view).forEach(b => b.onclick = () => availSheet(ctx, b.getAttribute("data-avail"), trucks, orders, fallas));
   $$("[data-kpi]", view).forEach(b => b.onclick = () => kpiDetail(ctx, b.getAttribute("data-kpi"), { trucks, orders, fallas, avail, openOrders, mesTotal }));
@@ -177,7 +190,7 @@ async function dashboard(view, ctx) {
   const ne = $("#nav-empresa", view); if (ne) ne.onclick = () => ctx.go("empresa", {});
   const ni = $("#nav-importar", view); if (ni) ni.onclick = () => ctx.go("importar", {});
   $$("[data-order]", view).forEach(b => b.onclick = () => createOrder(ctx, b.getAttribute("data-order"), fallas));
-  $$("[data-resolve]", view).forEach(b => b.onclick = () => resolveFalla(ctx, b.getAttribute("data-resolve")));
+  $$("[data-resolve]", view).forEach(b => b.onclick = () => resolveFalla(ctx, b.getAttribute("data-resolve"), fallas));
   $$("[data-openorder]", view).forEach(b => b.onclick = () => { orderDraft = null; ctx.go("order", { id: b.getAttribute("data-openorder") }); });
 }
 
@@ -292,9 +305,29 @@ async function createOrder(ctx, fid, fallas) {
   try { await store.saveOrder(null, o); toast("Orden creada: " + otNumero, "ok"); ctx.go("home", {}); }
   catch (e) { toast("No se pudo crear: " + (e.message || e), "err"); }
 }
-async function resolveFalla(ctx, fid) {
-  try { await store.resolveFalla(fid); toast("Falla descartada", "ok"); ctx.go("home", {}); }
-  catch (e) { toast("No se pudo descartar: " + (e.message || e), "err"); }
+function resolveFalla(ctx, fid, fallas) {
+  const f = (fallas || []).find(x => x.id === fid);
+  openSheet("Descartar falla",
+    '<p style="margin:0 0 4px;font-weight:600">' + (f ? esc(f.titulo) : "") + "</p>" +
+    '<p class="meta-line" style="margin:0 0 12px;font-size:.82rem">El reporte del chofer se conserva con su fecha, hora, GPS y nombre. Solo se registra que la falla fue descartada, con el motivo.</p>' +
+    '<label class="fld"><span class="lb">Motivo del descarte</span><textarea class="input" id="rs-motivo" placeholder="Ej: revisado en terreno, sin problema real"></textarea></label>' +
+    '<button class="btn btn-danger" id="rs-ok">Descartar falla</button>',
+    () => {
+      const ta = $("#rs-motivo"); if (ta) ta.focus();
+      $("#rs-ok").onclick = async () => {
+        const motivo = ($("#rs-motivo").value || "").trim();
+        if (!motivo) { toast("Indica el motivo del descarte", "err"); return; }
+        const btn = $("#rs-ok"); btn.disabled = true; btn.textContent = "Descartando...";
+        try {
+          await store.resolveFalla(fid, {
+            titulo: f ? f.titulo : "", truckId: f ? f.truckId : "", origen: f ? f.origen : "",
+            driverFalla: f ? f.driver : "", fallaTs: f ? f.ts : null, sev: f ? f.sev : "",
+            motivo, por: ctx.profile.nombre, uid: ctx.profile.uid
+          });
+          closeSheet(); toast("Falla descartada", "ok"); ctx.go("home", {});
+        } catch (e) { toast("No se pudo descartar: " + (e.message || e), "err"); btn.disabled = false; btn.textContent = "Descartar falla"; }
+      };
+    });
 }
 
 // ---------------- ORDEN detalle ----------------

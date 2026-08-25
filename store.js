@@ -346,7 +346,8 @@ export const store = {
   async addProduct(data) { return A.add("products", data); },
   async saveProduct(id, data) { await A.set("products", id, data); return id; },
 
-  // --- fallas descartadas ---
+  // --- fallas descartadas (con motivo; el reporte original nunca se edita) ---
   async listResolved() { return (await A.list("resolved")).map(r => r.id); },
-  async resolveFalla(id) { return A.set("resolved", id, { id, ts: Date.now() }); }
+  async listResolvedDocs() { return (await A.list("resolved")).sort((a, b) => (b.ts || 0) - (a.ts || 0)); },
+  async resolveFalla(id, data) { return A.set("resolved", id, Object.assign({ id, ts: Date.now() }, data || {})); }
 };
