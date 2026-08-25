@@ -27,6 +27,7 @@ export const PERMISSIONS = {
   "product.manage":   "Administrar la lista de productos trasladados",
   "order.manage":     "Crear y gestionar órdenes de taller y costos",
   "reports.view":     "Ver reportes, indicadores y costos",
+  "data.import":      "Importar viajes históricos desde Excel",
   "user.manage":      "Administrar usuarios y roles"
 };
 
@@ -47,7 +48,7 @@ const ROLE_PERMISSIONS = {
     "checklist.create", "bitacora.create", "fuel.create", "trip.create",
     "truck.select", "history.own",
     "fleet.view", "falla.view", "truck.manage", "product.manage", "order.manage",
-    "reports.view", "user.manage"
+    "reports.view", "data.import", "user.manage"
   ]
 };
 

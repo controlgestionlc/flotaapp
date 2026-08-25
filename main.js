@@ -13,6 +13,7 @@ import { renderReportes } from "./reportes.js";
 import { renderEmpresa } from "./empresa.js";
 import { renderResumen } from "./resumen.js";
 import { renderProductos } from "./productos.js";
+import { renderImportar } from "./importar.js";
 
 const APP = document.getElementById("app");
 
@@ -94,6 +95,10 @@ async function routeTo(view) {
   if (r === "productos") {
     if (!can(p, "product.manage")) { ctx.route = "home"; return renderPanel(view, ctx); }
     return renderProductos(view, ctx);
+  }
+  if (r === "importar") {
+    if (!can(p, "data.import")) { ctx.route = "home"; return renderPanel(view, ctx); }
+    return renderImportar(view, ctx);
   }
   if (r === "reportes") {
     if (!can(p, "reports.view")) { ctx.route = "home"; return renderPanel(view, ctx); }

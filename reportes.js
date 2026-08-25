@@ -56,7 +56,7 @@ export async function renderReportes(view, ctx) {
       kpi("a", String(new Set(tripsR.map(v => v.plantaDestino).filter(Boolean)).size), "Plantas destino", "distintas", "plantas") +
       "</div>";
     const tripList = tripsR.slice().sort((a, b) => (b.salida || b.ts) - (a.salida || a.ts)).slice(0, 6).map(v => {
-      const t = trucks.find(x => x.id === v.truckId) || { num: "?" };
+      const t = trucks.find(x => x.id === v.truckId) || { num: v.patente || "?" };
       return '<div class="row"><div class="rl"><div class="t">' + iconSpan("route") + esc(t.num) + " · " + esc(v.predio || v.origen || "") + " → " + esc(v.plantaDestino || "(sin cerrar)") + (v.estado !== "cerrado" ? ' <span class="pill warn">Abierto</span>' : "") + "</div>" +
         '<div class="m"><span class="num">' + nf(v.volumen) + " " + esc(v.unidad || "") + "</span>" + (v.producto ? "<span>" + esc(v.producto.descripcion) + "</span>" : "") + (v.guiaDespacho ? "<span>" + esc(v.guiaDespacho) + "</span>" : "") + "<span>" + fmtDateTime(v.salida || v.ts) + "</span></div></div></div>";
     }).join("");
@@ -90,7 +90,7 @@ export async function renderReportes(view, ctx) {
     function kpiDetailRep(k) {
       const fuelRow = f => { const t = trucks.find(x => x.id === f.truckId) || { num: "?" };
         return '<div class="row"><div class="rl"><div class="t">' + iconSpan("fuel") + esc(t.num) + " · " + nf(f.litros) + " L · " + fmtCLP(f.total) + '</div><div class="m"><span>' + esc(f.estacion || "") + "</span><span>$" + nf(f.precioLitro) + "/L</span><span class='num'>" + nf(f.km) + " km</span><span>" + fmtDate(f.fecha || f.ts) + "</span></div></div></div>"; };
-      const tripRow = v => { const t = trucks.find(x => x.id === v.truckId) || { num: "?" };
+      const tripRow = v => { const t = trucks.find(x => x.id === v.truckId) || { num: v.patente || "?" };
         return '<div class="row"><div class="rl"><div class="t">' + iconSpan("route") + esc(t.num) + " · " + esc(v.predio || v.origen || "") + " → " + esc(v.plantaDestino || "(sin cerrar)") + '</div><div class="m"><span class="num">' + nf(v.volumen) + " " + esc(v.unidad || "") + "</span>" + (v.producto ? "<span>" + esc(v.producto.descripcion) + "</span>" : "") + "<span>" + fmtDateTime(v.salida || v.ts) + "</span></div></div></div>"; };
       const fuelSorted = fuelR.slice().sort((a, b) => (b.fecha || b.ts) - (a.fecha || a.ts));
       const tripSorted = tripsR.slice().sort((a, b) => (b.salida || b.ts) - (a.salida || a.ts));
@@ -175,7 +175,7 @@ function exportTrips(trips, trucks) {
   const rows = [["Salida", "Llegada", "Estado", "Camion", "Patente", "Conductor", "Origen", "Predio", "Producto", "Especie", "PlantaDestino", "Volumen", "Unidad", "GuiaDespacho", "GMM"]];
   trips.slice().sort((a, b) => (a.salida || a.ts) - (b.salida || b.ts)).forEach(v => {
     const t = tm(v.truckId), pr = v.producto || {};
-    rows.push([csvDate(v.salida), csvDate(v.llegada), v.estado === "cerrado" ? "Cerrado" : "Abierto", t.num || "", t.patente || "", v.driverNombre || "", v.origen || "", v.predio || "", (pr.codigo ? pr.codigo + " " : "") + (pr.descripcion || ""), pr.especie || "", v.plantaDestino || "", v.volumen || "", v.unidad || "", v.guiaDespacho || "", v.gmm || ""]);
+    rows.push([csvDate(v.salida), csvDate(v.llegada), v.estado === "cerrado" ? "Cerrado" : "Abierto", t.num || v.patente || "", t.patente || v.patente || "", v.driverNombre || "", v.origen || "", v.predio || "", (pr.codigo ? pr.codigo + " " : "") + (pr.descripcion || ""), pr.especie || "", v.plantaDestino || "", v.volumen || "", v.unidad || "", v.guiaDespacho || "", v.gmm || ""]);
   });
   download("viajes.csv", toCSV(rows)); toast("Exportado viajes.csv", "ok");
 }

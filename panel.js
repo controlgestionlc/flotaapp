@@ -135,6 +135,7 @@ async function dashboard(view, ctx) {
   if (can(p, "product.manage")) navBtns.push('<button class="btn btn-ghost" id="nav-productos" style="flex:1;min-width:140px">' + I.route + "Productos</button>");
   if (can(p, "user.manage")) navBtns.push('<button class="btn btn-ghost" id="nav-usuarios" style="flex:1;min-width:140px">' + I.users + "Usuarios</button>");
   if (can(p, "user.manage")) navBtns.push('<button class="btn btn-ghost" id="nav-empresa" style="flex:1;min-width:140px">' + I.gear + "Empresa</button>");
+  if (can(p, "data.import")) navBtns.push('<button class="btn btn-ghost" id="nav-importar" style="flex:1;min-width:140px">' + I.upload + "Importar</button>");
   const navRow = '<div class="section" style="display:flex;flex-wrap:wrap;gap:10px">' + navBtns.join("") + "</div>";
 
   const fallaCards = !can(p, "falla.view") ? "" :
@@ -169,6 +170,7 @@ async function dashboard(view, ctx) {
   const npr = $("#nav-productos", view); if (npr) npr.onclick = () => ctx.go("productos", {});
   const nu = $("#nav-usuarios", view); if (nu) nu.onclick = () => ctx.go("usuarios", {});
   const ne = $("#nav-empresa", view); if (ne) ne.onclick = () => ctx.go("empresa", {});
+  const ni = $("#nav-importar", view); if (ni) ni.onclick = () => ctx.go("importar", {});
   $$("[data-order]", view).forEach(b => b.onclick = () => createOrder(ctx, b.getAttribute("data-order"), fallas));
   $$("[data-resolve]", view).forEach(b => b.onclick = () => resolveFalla(ctx, b.getAttribute("data-resolve")));
   $$("[data-openorder]", view).forEach(b => b.onclick = () => { orderDraft = null; ctx.go("order", { id: b.getAttribute("data-openorder") }); });

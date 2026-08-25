@@ -145,6 +145,11 @@ function demoAdapter() {
       const arr = db[coll] = db[coll] || [];
       const idx = arr.findIndex(r => r.id === id || r.uid === id);
       if (idx >= 0) { arr[idx] = Object.assign({}, arr[idx], patch); save(db); }
+    },
+    async bulkAdd(coll, items) {
+      const arr = db[coll] = db[coll] || [];
+      items.forEach((it, i) => arr.push(Object.assign({ id: coll.slice(0, 3) + "_b" + Date.now().toString(36) + "_" + i }, it)));
+      save(db); return items.length;
     }
   };
 }
@@ -214,7 +219,17 @@ async function firebaseAdapter() {
       return ref.id;
     },
     async set(coll, id, data) { await setDoc(doc(dbf, coll, id), data, { merge: true }); },
-    async update(coll, id, patch) { await updateDoc(doc(dbf, coll, id), patch); }
+    async update(coll, id, patch) { await updateDoc(doc(dbf, coll, id), patch); },
+    async bulkAdd(coll, items) {
+      let done = 0;
+      for (let i = 0; i < items.length; i += 400) {
+        const batch = fsMod.writeBatch(dbf);
+        items.slice(i, i + 400).forEach(it => batch.set(doc(collection(dbf, coll)), it));
+        await batch.commit();
+        done += Math.min(400, items.length - i);
+      }
+      return done;
+    }
   };
 }
 
@@ -299,6 +314,7 @@ export const store = {
   async listTrips() { return (await A.list("trips")).sort((a, b) => (b.salida || b.ts) - (a.salida || a.ts)); },
   async addTrip(data) { return A.add("trips", data); },
   async saveTrip(id, data) { await A.set("trips", id, data); return id; },
+  async addTripsBulk(items) { return A.bulkAdd("trips", items); },
 
   // --- productos trasladados ---
   async listProducts() { return (await A.list("products")).sort((a, b) => (a.codigo || "").localeCompare(b.codigo || "")); },
