@@ -2,7 +2,7 @@ import { store } from "./store.js";
 import { DOC_TYPES } from "./checklist.js";
 import { I, esc, fmtCLP, fmtDate, fmtDateTime, docStatus, iconSpan, emptyBox, $ } from "./ui.js";
 
-const EST = { pendiente: "Pendiente", agendado: "Agendado", en_taller: "En taller", completado: "Completado" };
+const EST = { pendiente: "Pendiente", agendado: "Agendado", en_taller: "En taller", completado: "Completado", descartada: "Descartada" };
 function orderTotal(o) { return (o.repuestos || []).reduce((s, x) => s + (Number(x.costo) || 0), 0) + (Number(o.manoObra) || 0); }
 function nf(n, dec) { return (Number(n) || 0).toLocaleString("es-CL", { maximumFractionDigits: dec || 0 }); }
 
@@ -40,7 +40,7 @@ export async function renderResumen(view, ctx) {
   if (!t) return ctx.go("camiones", {});
 
   const tOrders = orders.filter(o => o.truckId === id);
-  const openOrders = tOrders.filter(o => o.estado !== "completado");
+  const openOrders = tOrders.filter(o => o.estado !== "completado" && o.estado !== "descartada");
   const doneOrders = tOrders.filter(o => o.estado === "completado");
   const gastoTaller = doneOrders.reduce((s, o) => s + orderTotal(o), 0);
   const tTrips = trips.filter(v => v.truckId === id);
@@ -69,7 +69,7 @@ export async function renderResumen(view, ctx) {
   }).join("");
 
   const ordersBlock = tOrders.length ? tOrders.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 5).map(o =>
-    '<div class="row"><div class="rl"><div class="t">' + esc(o.titulo) + ' <span class="pill ' + (o.estado === "completado" ? "ok" : o.estado === "en_taller" ? "crit" : "warn") + '">' + EST[o.estado] + "</span></div>" +
+    '<div class="row"><div class="rl"><div class="t">' + esc(o.titulo) + ' <span class="pill ' + (o.estado === "completado" ? "ok" : o.estado === "en_taller" ? "crit" : o.estado === "descartada" ? "neutral" : "warn") + '">' + EST[o.estado] + "</span></div>" +
     '<div class="m">' + (o.otNumero ? "<span>" + esc(o.otNumero) + "</span>" : "") + (o.taller ? "<span>" + esc(o.taller) + "</span>" : "") +
     (o.estado === "completado" ? '<span class="num" style="color:var(--ink);font-weight:600">' + fmtCLP(orderTotal(o)) + "</span>" : "") + "</div></div></div>"
   ).join("") : emptyBox("Sin órdenes de taller");

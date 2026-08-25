@@ -9,8 +9,10 @@ import {
 
 const EST = {
   pendiente: { l: "Pendiente", c: "neutral" }, agendado: { l: "Agendado", c: "warn" },
-  en_taller: { l: "En taller", c: "crit" }, completado: { l: "Completado", c: "ok" }
+  en_taller: { l: "En taller", c: "crit" }, completado: { l: "Completado", c: "ok" },
+  descartada: { l: "Descartada", c: "neutral" }
 };
+const activa = o => o.estado !== "completado" && o.estado !== "descartada";
 
 let orderDraft = null;
 
@@ -40,7 +42,7 @@ function openFallas(cks, bits, orders, resolved) {
 }
 
 function truckStatus(id, orders, fallas) {
-  const open = orders.filter(o => o.truckId === id && o.estado !== "completado");
+  const open = orders.filter(o => o.truckId === id && activa(o));
   if (open.some(o => o.estado === "en_taller")) return { cls: "crit", label: "En taller" };
   const fs = fallas.filter(f => f.truckId === id);
   if (fs.some(f => f.sev === "alta")) return { cls: "crit", label: "Con falla" };
@@ -52,7 +54,7 @@ function orderTotal(o) { return (o.repuestos || []).reduce((s, x) => s + (Number
 // Semáforo de disponibilidad operativa del camión.
 // verde = operativo · amarillo = observación · rojo = fuera de servicio
 function availStatus(truckId, orders, fallas) {
-  const open = orders.filter(o => o.truckId === truckId && o.estado !== "completado");
+  const open = orders.filter(o => o.truckId === truckId && activa(o));
   const fs = fallas.filter(f => f.truckId === truckId);
   const enTaller = open.find(o => o.estado === "en_taller");
   if (enTaller) return { k: "fuera", cls: "crit", label: "Fuera de servicio", order: enTaller };
@@ -99,7 +101,7 @@ async function dashboard(view, ctx) {
   const nObs = avail.filter(x => x.a.k === "observacion").length;
   const nFuera = avail.filter(x => x.a.k === "fuera").length;
   const operativos = nOp;
-  const openOrders = orders.filter(o => o.estado !== "completado");
+  const openOrders = orders.filter(o => activa(o));
   const mesTotal = orders.filter(o => o.estado === "completado" && monthKey(o.completedAt) === monthKey()).reduce((s, o) => s + orderTotal(o), 0);
 
   const kpis = '<div class="kpis section">' +
@@ -353,6 +355,16 @@ async function orderDetail(view, ctx) {
     '<button class="del" data-delrep="' + i + '">' + I.x + "</button></div>").join("");
   const total = d.repuestos.reduce((s, r) => s + (Number(r.costo) || 0), 0) + (Number(d.manoObra) || 0);
   const showWork = d.estado === "completado" || d.estado === "en_taller";
+  const esDesc = o.estado === "descartada";
+  const descBanner = esDesc
+    ? '<div class="card pad section" style="border-color:var(--line)"><span class="eyebrow" style="display:block;margin-bottom:6px">Orden descartada</span>' +
+      '<p style="margin:0;font-size:.9rem;color:var(--ink-2)">' + esc((o.descartada && o.descartada.motivo) || "") + "</p>" +
+      '<div class="meta-line" style="margin-top:6px;font-size:.8rem">Por ' + esc((o.descartada && o.descartada.por) || "?") + (o.descartada && o.descartada.ts ? " · " + fmtDateTime(o.descartada.ts) : "") + "</div></div>"
+    : "";
+  const descBtn = (editable && !esDesc && o.estado !== "completado")
+    ? '<div class="section"><button class="btn btn-soft" id="o-descartar" style="width:100%;color:var(--crit)">Descartar orden</button>' +
+      '<div class="meta-line" style="font-size:.78rem;margin-top:6px;text-align:center">Anula la orden y deja el camión disponible. El reporte del chofer se conserva.</div></div>'
+    : "";
 
   view.innerHTML =
     '<button class="backlink" id="o-back">' + I.back + " Panel</button>" +
@@ -362,6 +374,7 @@ async function orderDetail(view, ctx) {
     '<div class="meta-line" style="margin-top:3px">' + esc(t.marca + " · " + t.patente) + (o.otNumero ? " · " + esc(o.otNumero) : "") + "</div></div></div>" +
     (o.detalle ? '<p style="margin:12px 0 0;font-size:.9rem;color:var(--ink-2)">' + esc(o.detalle) + "</p>" : "") +
     '<div class="meta-line" style="margin-top:8px;font-size:.8rem">Reportado por ' + esc(o.reportadoPor || "chofer") + " · " + fmtDateTime(o.createdAt) + "</div></div>" +
+    descBanner +
     '<div class="card pad section"><label class="fld"><span class="lb">Estado</span><div class="chips">' + estChips + "</div></label>" +
     '<label class="fld"><span class="lb">Taller</span><input class="input" id="o-taller" placeholder="Nombre del taller" value="' + esc(d.taller) + '"' + (editable ? "" : " disabled") + "></label>" +
     '<label class="fld"><span class="lb">Fecha agendada</span><input class="input" type="date" id="o-fecha" value="' + esc(d.fecha) + '"' + (editable ? "" : " disabled") + "></label>" +
@@ -374,10 +387,12 @@ async function orderDetail(view, ctx) {
       (editable ? '<button class="btn sm btn-soft" id="o-addrep" style="margin-bottom:14px">' + I.plus + "Agregar repuesto</button>" : "") +
       '<label class="fld"><span class="lb">Mano de obra</span><input class="input num" id="o-mano" inputmode="numeric" placeholder="$" value="' + esc(d.manoObra) + '"' + (editable ? "" : " disabled") + "></label>" +
       '<div class="total-line"><span class="eyebrow">Costo total</span><b class="num">' + fmtCLP(total) + "</b></div></div>" : "") +
-    (editable ? '<div class="formbar"><button class="btn btn-primary" id="o-save">' + I.check + "Guardar orden</button></div>" : "");
+    descBtn +
+    (editable && !esDesc ? '<div class="formbar"><button class="btn btn-primary" id="o-save">' + I.check + "Guardar orden</button></div>" : "");
 
   $("#o-back", view).onclick = () => { orderDraft = null; ctx.go("home", {}); };
-  if (!editable) return;
+  if (!editable || esDesc) return;
+  const bd = $("#o-descartar", view); if (bd) bd.onclick = () => descartarOrden(ctx, o);
   $$("[data-est]", view).forEach(b => b.onclick = () => { syncOrder(view); d.estado = b.getAttribute("data-est"); orderDetail(view, ctx); });
   const bindF = (id, f) => { const el = $(id, view); if (el) el.oninput = () => { d[f] = el.value; }; };
   bindF("#o-taller", "taller"); bindF("#o-trabajo", "trabajo"); bindF("#o-mano", "manoObra"); bindF("#o-estim", "estim");
@@ -399,12 +414,44 @@ async function orderDetail(view, ctx) {
       costoEstimado: Math.round(Number(d.estim) || 0),
       fechaEntregaEstimada: d.entrega ? new Date(d.entrega + "T12:00:00").getTime() : null,
       trabajo: String(d.trabajo).trim(), repuestos: reps, manoObra: Math.round(Number(d.manoObra) || 0),
-      completedAt: d.estado === "completado" ? (o.completedAt || Date.now()) : null
+      completedAt: d.estado === "completado" ? (o.completedAt || Date.now()) : null,
+      descartada: null
     };
     const btn = $("#o-save", view); btn.disabled = true; btn.textContent = "Guardando...";
     try { await store.saveOrder(o.id, Object.assign({}, o, patch)); orderDraft = null; toast("Orden actualizada", "ok"); ctx.go("home", {}); }
     catch (e) { toast("No se pudo guardar: " + (e.message || e), "err"); btn.disabled = false; btn.textContent = "Guardar orden"; }
   };
+}
+// Descartar (anular) una orden de taller con motivo obligatorio.
+// Conserva la orden y el reporte original del chofer; libera el camión.
+function descartarOrden(ctx, o) {
+  openSheet("Descartar orden",
+    '<p style="margin:0 0 4px;font-weight:600">' + esc(o.titulo) + (o.otNumero ? " · " + esc(o.otNumero) : "") + "</p>" +
+    '<p class="meta-line" style="margin:0 0 12px;font-size:.82rem">La orden queda anulada y el camión vuelve a estar disponible. El reporte original del chofer (fecha, hora, GPS y nombre) se conserva y no se edita.</p>' +
+    '<label class="fld"><span class="lb">Motivo del descarte</span><textarea class="input" id="rs-motivo" placeholder="Ej: revisado en terreno, sin problema real"></textarea></label>' +
+    '<button class="btn btn-danger" id="rs-ok">Descartar orden</button>',
+    () => {
+      const ta = $("#rs-motivo"); if (ta) ta.focus();
+      $("#rs-ok").onclick = async () => {
+        const motivo = ($("#rs-motivo").value || "").trim();
+        if (!motivo) { toast("Indica el motivo del descarte", "err"); return; }
+        const btn = $("#rs-ok"); btn.disabled = true; btn.textContent = "Descartando...";
+        try {
+          const desc = { motivo, por: ctx.profile.nombre, uid: ctx.profile.uid, ts: Date.now() };
+          await store.saveOrder(o.id, Object.assign({}, o, { estado: "descartada", descartada: desc }));
+          for (const fid of (o.sources || [])) {
+            try {
+              await store.resolveFalla(fid, {
+                titulo: o.titulo, truckId: o.truckId, origen: "Orden " + (o.otNumero || "taller"),
+                driverFalla: o.reportadoPor || "", fallaTs: o.createdAt || null, sev: "",
+                motivo, por: ctx.profile.nombre, uid: ctx.profile.uid
+              });
+            } catch (e) { /* la orden ya quedó descartada; el registro de falla es complementario */ }
+          }
+          orderDraft = null; closeSheet(); toast("Orden descartada", "ok"); ctx.go("home", {});
+        } catch (e) { toast("No se pudo descartar: " + (e.message || e), "err"); btn.disabled = false; btn.textContent = "Descartar orden"; }
+      };
+    });
 }
 function syncOrder(view) {
   const d = orderDraft; if (!d) return;
