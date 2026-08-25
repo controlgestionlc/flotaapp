@@ -119,10 +119,10 @@ async function dashboard(view, ctx) {
       ". Toca para revisar los camiones.</div></div>"
     : "";
 
-  const navRow = '<div class="section" style="display:grid;grid-template-columns:1fr' + (can(p, "user.manage") ? " 1fr" : "") + ';gap:10px">' +
-    '<button class="btn btn-ghost" id="nav-camiones">' + I.truck + "Camiones</button>" +
-    (can(p, "user.manage") ? '<button class="btn btn-ghost" id="nav-usuarios">' + I.users + "Usuarios</button>" : "") +
-    "</div>";
+  const navBtns = ['<button class="btn btn-ghost" id="nav-camiones" style="flex:1;min-width:140px">' + I.truck + "Camiones</button>"];
+  if (can(p, "reports.view")) navBtns.push('<button class="btn btn-ghost" id="nav-reportes" style="flex:1;min-width:140px">' + I.chart + "Indicadores</button>");
+  if (can(p, "user.manage")) navBtns.push('<button class="btn btn-ghost" id="nav-usuarios" style="flex:1;min-width:140px">' + I.users + "Usuarios</button>");
+  const navRow = '<div class="section" style="display:flex;flex-wrap:wrap;gap:10px">' + navBtns.join("") + "</div>";
 
   const fallaCards = !can(p, "falla.view") ? "" :
     ('<div class="section"><div class="subhead"><h2>Fallas por gestionar</h2></div><div class="card">' +
@@ -149,6 +149,7 @@ async function dashboard(view, ctx) {
 
   $$("[data-avail]", view).forEach(b => b.onclick = () => availSheet(ctx, b.getAttribute("data-avail"), trucks, orders, fallas));
   $("#nav-camiones", view).onclick = () => ctx.go("camiones", {});
+  const nr = $("#nav-reportes", view); if (nr) nr.onclick = () => ctx.go("reportes", {});
   const nu = $("#nav-usuarios", view); if (nu) nu.onclick = () => ctx.go("usuarios", {});
   const db = $("#doc-banner", view); if (db) db.onclick = () => ctx.go("camiones", {});
   $$("[data-order]", view).forEach(b => b.onclick = () => createOrder(ctx, b.getAttribute("data-order"), fallas));

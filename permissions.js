@@ -17,30 +17,34 @@ export const ROLES = {
 export const PERMISSIONS = {
   "checklist.create": "Registrar checklist de turno",
   "bitacora.create":  "Registrar novedades en la bitácora",
+  "fuel.create":      "Registrar cargas de combustible",
+  "trip.create":      "Registrar viajes realizados",
   "truck.select":     "Elegir el camión del turno",
   "history.own":      "Ver el historial del camión que conduce",
   "fleet.view":       "Ver el estado de toda la flota",
   "falla.view":       "Ver las fallas reportadas",
   "truck.manage":     "Registrar y editar camiones y su documentación",
   "order.manage":     "Crear y gestionar órdenes de taller y costos",
-  "reports.view":     "Ver reportes y costos",
+  "reports.view":     "Ver reportes, indicadores y costos",
   "user.manage":      "Administrar usuarios y roles"
 };
 
 // Asignación de permisos por rol. Editar aquí para ampliar.
 const ROLE_PERMISSIONS = {
   conductor: [
-    "checklist.create", "bitacora.create", "truck.select", "history.own"
+    "checklist.create", "bitacora.create", "fuel.create", "trip.create",
+    "truck.select", "history.own"
   ],
   supervisor: [
     "fleet.view", "falla.view", "truck.manage", "order.manage",
-    "reports.view", "history.own"
+    "reports.view", "fuel.create", "trip.create", "history.own"
   ],
   gerente: [
     "fleet.view", "falla.view", "reports.view"
   ],
   administrador: [
-    "checklist.create", "bitacora.create", "truck.select", "history.own",
+    "checklist.create", "bitacora.create", "fuel.create", "trip.create",
+    "truck.select", "history.own",
     "fleet.view", "falla.view", "truck.manage", "order.manage",
     "reports.view", "user.manage"
   ]

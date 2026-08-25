@@ -9,6 +9,7 @@ import { renderConductor } from "./conductor.js";
 import { renderPanel } from "./panel.js";
 import { renderCamiones } from "./camiones.js";
 import { renderUsuarios } from "./usuarios.js";
+import { renderReportes } from "./reportes.js";
 
 const APP = document.getElementById("app");
 
@@ -71,6 +72,11 @@ async function routeTo(view) {
   if (r === "usuarios" || r === "userForm") {
     if (!can(p, "user.manage")) { ctx.route = "home"; return renderPanel(view, ctx); }
     return renderUsuarios(view, ctx);
+  }
+  // Indicadores / reportes (reports.view)
+  if (r === "reportes") {
+    if (!can(p, "reports.view")) { ctx.route = "home"; return renderPanel(view, ctx); }
+    return renderReportes(view, ctx);
   }
   // Panel supervisor / gerente / administrador (home + órdenes)
   return renderPanel(view, ctx);

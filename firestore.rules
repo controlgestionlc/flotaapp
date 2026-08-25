@@ -49,22 +49,39 @@ service cloud.firestore {
 
     // Checklists de turno
     match /checklists/{id} {
-      allow read: if hasRole(['supervisor','gerente','administrador'])
-                  || (isActive() && resource.data.uid == request.auth.uid);
+      // Cualquier usuario activo puede leer el historial del camión.
+      allow read: if isActive();
       // El conductor crea su propio checklist (uid propio); no se edita luego.
       allow create: if isActive()
                     && request.resource.data.uid == request.auth.uid
-                    && hasRole(['conductor','administrador']);
+                    && hasRole(['conductor','supervisor','administrador']);
       allow update, delete: if hasRole(['administrador']);
     }
 
     // Bitácora de novedades
     match /bitacora/{id} {
-      allow read: if hasRole(['supervisor','gerente','administrador'])
-                  || (isActive() && resource.data.uid == request.auth.uid);
+      allow read: if isActive();
       allow create: if isActive()
                     && request.resource.data.uid == request.auth.uid
-                    && hasRole(['conductor','administrador']);
+                    && hasRole(['conductor','supervisor','administrador']);
+      allow update, delete: if hasRole(['administrador']);
+    }
+
+    // Cargas de combustible
+    match /fuel/{id} {
+      allow read: if isActive();
+      allow create: if isActive()
+                    && request.resource.data.uid == request.auth.uid
+                    && hasRole(['conductor','supervisor','administrador']);
+      allow update, delete: if hasRole(['administrador']);
+    }
+
+    // Viajes realizados
+    match /trips/{id} {
+      allow read: if isActive();
+      allow create: if isActive()
+                    && request.resource.data.uid == request.auth.uid
+                    && hasRole(['conductor','supervisor','administrador']);
       allow update, delete: if hasRole(['administrador']);
     }
 

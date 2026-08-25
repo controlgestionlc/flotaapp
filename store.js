@@ -77,8 +77,17 @@ function demoAdapter() {
         trabajo: "Cambio de pastillas y rectificado de discos.", repuestos: [{ desc:"Juego pastillas", costo:189000 }], manoObra: 145000,
         createdBy: "u_super", createdAt: now - 4*D, completedAt: now - 2*D }
     ];
+    const fuel = [
+      { id: "fu1", truckId: "t1", uid: "u_chofer", deviceId: "seed", driverNombre: "José Muñoz", fecha: now - 10*D, km: 120000, litros: 300, precioLitro: 950, estacion: "Copec Angol", total: 285000, ts: now - 10*D },
+      { id: "fu2", truckId: "t1", uid: "u_chofer", deviceId: "seed", driverNombre: "José Muñoz", fecha: now - 3*D,  km: 121500, litros: 320, precioLitro: 970, estacion: "Copec Angol", total: 310400, ts: now - 3*D },
+      { id: "fu3", truckId: "t2", uid: "u_chofer", deviceId: "seed", driverNombre: "José Muñoz", fecha: now - 4*D,  km: 284000, litros: 280, precioLitro: 965, estacion: "Petrobras Renaico", total: 270200, ts: now - 4*D }
+    ];
+    const trips = [
+      { id: "tr1", truckId: "t1", uid: "u_chofer", deviceId: "seed", driverNombre: "José Muñoz", origen: "Predio El Roble", salida: now - 2*D, predio: "El Roble", plantaDestino: "Aserradero Mininco", volumen: 32, unidad: "M3", guiaDespacho: "GD-45210", llegada: now - 2*D + 3*H, gmm: "GMM-8842", ts: now - 2*D },
+      { id: "tr2", truckId: "t2", uid: "u_chofer", deviceId: "seed", driverNombre: "José Muñoz", origen: "Predio Santa Ana", salida: now - 1*D, predio: "Santa Ana", plantaDestino: "Planta Collipulli", volumen: 28, unidad: "MR", guiaDespacho: "GD-45233", llegada: now - 1*D + 2*H, gmm: "GMM-8851", ts: now - 1*D }
+    ];
     const devices = [];
-    return { users, devices, trucks, checklists, bitacora, orders };
+    return { users, devices, trucks, checklists, bitacora, orders, fuel, trips };
   }
 
   let db = load();
@@ -270,6 +279,14 @@ export const store = {
     if (id) { await A.set("orders", id, data); return id; }
     return A.add("orders", data);
   },
+
+  // --- combustible ---
+  async listFuel() { return (await A.list("fuel")).sort((a, b) => (b.fecha || b.ts) - (a.fecha || a.ts)); },
+  async addFuel(data) { return A.add("fuel", data); },
+
+  // --- viajes ---
+  async listTrips() { return (await A.list("trips")).sort((a, b) => (b.salida || b.ts) - (a.salida || a.ts)); },
+  async addTrip(data) { return A.add("trips", data); },
 
   // --- fallas descartadas ---
   async listResolved() { return (await A.list("resolved")).map(r => r.id); },

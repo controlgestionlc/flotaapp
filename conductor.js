@@ -1,7 +1,7 @@
 import { store } from "./store.js";
 import { CK_ITEMS } from "./checklist.js";
 import {
-  I, esc, uid, fmtDate, fmtDateTime, todayKey, iconSpan, emptyBox,
+  I, esc, uid, fmtCLP, fmtDate, fmtDateTime, todayKey, dInput, iconSpan, emptyBox,
   toast, captureGPS, gpsText, $, $$
 } from "./ui.js";
 
@@ -17,6 +17,8 @@ export async function renderConductor(view, ctx) {
   const screen = ctx.params.screen || "home";
   if (screen === "checklist") return checklist(view, ctx, sel);
   if (screen === "bitacora") return bitacora(view, ctx, sel);
+  if (screen === "combustible") return combustible(view, ctx, sel);
+  if (screen === "viaje") return viaje(view, ctx, sel);
   if (screen === "historial") return historial(view, ctx, sel);
   return home(view, ctx, sel);
 }
@@ -54,11 +56,15 @@ async function home(view, ctx, t) {
       "</div></div>" +
     '<div class="tiles section">' +
       tile("c-checklist", I.check, doneToday ? "Repetir checklist" : "Checklist de inicio de turno", doneToday ? "Ya registraste uno hoy" : "Revisa el camión antes de salir") +
-      tile("c-bitacora", I.note, "Registrar novedad", "Falla, incidente, combustible o kilometraje") +
+      tile("c-combustible", I.fuel, "Cargar combustible", "Litros, precio, kilómetros y estación") +
+      tile("c-viaje", I.route, "Registrar viaje", "Origen, destino, volumen y guía de despacho") +
+      tile("c-bitacora", I.note, "Registrar novedad", "Falla, incidente o kilometraje") +
       tile("c-historial", I.history, "Historial del camión", "Últimos checklists y registros") +
     "</div>" +
     '<button class="backlink" id="c-changetruck">' + I.back + " Cambiar de camión</button>";
   $("#c-checklist", view).onclick = () => ctx.go("home", { screen: "checklist" });
+  $("#c-combustible", view).onclick = () => ctx.go("home", { screen: "combustible" });
+  $("#c-viaje", view).onclick = () => ctx.go("home", { screen: "viaje" });
   $("#c-bitacora", view).onclick = () => ctx.go("home", { screen: "bitacora" });
   $("#c-historial", view).onclick = () => ctx.go("home", { screen: "historial" });
   $("#c-changetruck", view).onclick = () => { ctx.setTruck(null); ctx.go("home", { screen: "home" }); };
@@ -177,6 +183,84 @@ function bitacora(view, ctx, t) {
   };
 }
 function syncBt(view) { const d = draft.bt; if (!d) return; const el = $("#bt-desc", view); if (el) d.desc = el.value; }
+
+// ---------------- COMBUSTIBLE ----------------
+function combustible(view, ctx, t) {
+  if (!draft.fuel) draft.fuel = { fecha: dInput(Date.now()), km: "", litros: "", precio: "", estacion: "" };
+  const d = draft.fuel;
+  const total = (Number(d.litros) || 0) * (Number(d.precio) || 0);
+  view.innerHTML =
+    '<button class="backlink" id="fu-back">' + I.back + " Volver</button>" +
+    '<div class="subhead"><h2>Carga de combustible</h2></div>' +
+    '<p class="meta-line" style="margin:-4px 2px 14px">' + esc(t.num + " · " + t.patente) + "</p>" +
+    '<div class="card pad section">' +
+      '<label class="fld"><span class="lb">Fecha</span><input class="input" type="date" id="fu-fecha" value="' + esc(d.fecha) + '"></label>' +
+      '<div class="grid2"><label class="fld"><span class="lb">Kilómetros (odómetro)</span><input class="input num" id="fu-km" inputmode="numeric" placeholder="Ej: 121500" value="' + esc(d.km) + '"></label>' +
+      '<label class="fld"><span class="lb">Litros</span><input class="input num" id="fu-litros" inputmode="decimal" placeholder="Ej: 320" value="' + esc(d.litros) + '"></label></div>' +
+      '<div class="grid2"><label class="fld"><span class="lb">Precio por litro</span><input class="input num" id="fu-precio" inputmode="numeric" placeholder="$" value="' + esc(d.precio) + '"></label>' +
+      '<label class="fld"><span class="lb">Total</span><input class="input num" id="fu-total" value="' + fmtCLP(total) + '" disabled></label></div>' +
+      '<label class="fld" style="margin-bottom:0"><span class="lb">Estación de servicio</span><input class="input" id="fu-estacion" placeholder="Ej: Copec Angol" value="' + esc(d.estacion) + '"></label>' +
+    "</div>" +
+    '<div class="formbar"><button class="btn btn-primary" id="fu-submit">' + I.fuel + "Guardar carga</button></div>";
+  const sync = () => { ["fecha", "km", "litros", "precio", "estacion"].forEach(k => { const el = $("#fu-" + k, view); if (el) d[k] = el.value; }); };
+  ["km", "litros", "precio"].forEach(k => { const el = $("#fu-" + k, view); if (el) el.oninput = () => { d[k] = el.value; const tl = $("#fu-total", view); if (tl) tl.value = fmtCLP((Number(d.litros) || 0) * (Number(d.precio) || 0)); }; });
+  ["fecha", "estacion"].forEach(k => { const el = $("#fu-" + k, view); if (el) el.oninput = () => { d[k] = el.value; }; });
+  $("#fu-back", view).onclick = () => { draft.fuel = null; ctx.go("home", { screen: "home" }); };
+  $("#fu-submit", view).onclick = async () => {
+    sync();
+    if (!d.km || !d.litros) { toast("Ingresa kilómetros y litros", "err"); return; }
+    const rec = {
+      truckId: t.id, uid: ctx.profile.uid, deviceId: store.deviceId(), driverNombre: ctx.profile.nombre,
+      fecha: d.fecha ? new Date(d.fecha + "T12:00:00").getTime() : Date.now(),
+      km: Math.round(Number(d.km) || 0), litros: Number(d.litros) || 0, precioLitro: Math.round(Number(d.precio) || 0),
+      estacion: (d.estacion || "").trim(), total: Math.round((Number(d.litros) || 0) * (Number(d.precio) || 0)), ts: Date.now()
+    };
+    const btn = $("#fu-submit", view); btn.disabled = true; btn.textContent = "Guardando...";
+    try { await store.addFuel(rec); draft.fuel = null; toast("Carga de combustible guardada", "ok"); ctx.go("home", { screen: "home" }); }
+    catch (e) { toast("No se pudo guardar: " + (e.message || e), "err"); btn.disabled = false; btn.textContent = "Guardar carga"; }
+  };
+}
+
+// ---------------- VIAJE ----------------
+function viaje(view, ctx, t) {
+  if (!draft.viaje) draft.viaje = { origen: "", predio: "", salida: "", planta: "", volumen: "", unidad: "M3", guia: "", llegada: "", gmm: "" };
+  const d = draft.viaje;
+  const unidadChips = ["M3", "MR"].map(u => '<button class="chip' + (d.unidad === u ? " on" : "") + '" data-unidad="' + u + '">' + u + "</button>").join("");
+  view.innerHTML =
+    '<button class="backlink" id="vj-back">' + I.back + " Volver</button>" +
+    '<div class="subhead"><h2>Registrar viaje</h2></div>' +
+    '<p class="meta-line" style="margin:-4px 2px 14px">' + esc(t.num + " · " + t.patente) + "</p>" +
+    '<div class="card pad section">' +
+      '<label class="fld"><span class="lb">Origen</span><input class="input" id="vj-origen" placeholder="Lugar de origen" value="' + esc(d.origen) + '"></label>' +
+      '<label class="fld"><span class="lb">Nombre del predio</span><input class="input" id="vj-predio" placeholder="Predio de carga" value="' + esc(d.predio) + '"></label>' +
+      '<label class="fld"><span class="lb">Salida (fecha y hora)</span><input class="input" type="datetime-local" id="vj-salida" value="' + esc(d.salida) + '"></label>' +
+      '<label class="fld"><span class="lb">Planta destino</span><input class="input" id="vj-planta" placeholder="Planta o aserradero" value="' + esc(d.planta) + '"></label>' +
+      '<div class="grid2"><label class="fld"><span class="lb">Volumen</span><input class="input num" id="vj-volumen" inputmode="decimal" placeholder="Ej: 32" value="' + esc(d.volumen) + '"></label>' +
+      '<label class="fld"><span class="lb">Unidad</span><div class="chips">' + unidadChips + "</div></label></div>" +
+      '<label class="fld"><span class="lb">Guía de despacho</span><input class="input" id="vj-guia" placeholder="N° de guía" value="' + esc(d.guia) + '"></label>' +
+      '<label class="fld"><span class="lb">Llegada (fecha y hora)</span><input class="input" type="datetime-local" id="vj-llegada" value="' + esc(d.llegada) + '"></label>' +
+      '<label class="fld" style="margin-bottom:0"><span class="lb">GMM de recepción</span><input class="input" id="vj-gmm" placeholder="N° GMM" value="' + esc(d.gmm) + '"></label>' +
+    "</div>" +
+    '<div class="formbar"><button class="btn btn-primary" id="vj-submit">' + I.route + "Guardar viaje</button></div>";
+  const map = { origen: "#vj-origen", predio: "#vj-predio", salida: "#vj-salida", planta: "#vj-planta", volumen: "#vj-volumen", guia: "#vj-guia", llegada: "#vj-llegada", gmm: "#vj-gmm" };
+  const sync = () => { Object.keys(map).forEach(k => { const el = $(map[k], view); if (el) d[k] = el.value; }); };
+  Object.keys(map).forEach(k => { const el = $(map[k], view); if (el) el.oninput = () => { d[k] = el.value; }; });
+  $$("[data-unidad]", view).forEach(b => b.onclick = () => { sync(); d.unidad = b.getAttribute("data-unidad"); viaje(view, ctx, t); });
+  $("#vj-back", view).onclick = () => { draft.viaje = null; ctx.go("home", { screen: "home" }); };
+  $("#vj-submit", view).onclick = async () => {
+    sync();
+    if (!d.predio.trim() && !d.origen.trim()) { toast("Indica al menos el origen o el predio", "err"); return; }
+    const rec = {
+      truckId: t.id, uid: ctx.profile.uid, deviceId: store.deviceId(), driverNombre: ctx.profile.nombre,
+      origen: d.origen.trim(), predio: d.predio.trim(), plantaDestino: d.planta.trim(),
+      salida: d.salida ? new Date(d.salida).getTime() : null, llegada: d.llegada ? new Date(d.llegada).getTime() : null,
+      volumen: Number(d.volumen) || 0, unidad: d.unidad, guiaDespacho: d.guia.trim(), gmm: d.gmm.trim(), ts: Date.now()
+    };
+    const btn = $("#vj-submit", view); btn.disabled = true; btn.textContent = "Guardando...";
+    try { await store.addTrip(rec); draft.viaje = null; toast("Viaje registrado", "ok"); ctx.go("home", { screen: "home" }); }
+    catch (e) { toast("No se pudo guardar: " + (e.message || e), "err"); btn.disabled = false; btn.textContent = "Guardar viaje"; }
+  };
+}
 
 // ---------------- HISTORIAL ----------------
 async function historial(view, ctx, t) {
