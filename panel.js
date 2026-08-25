@@ -3,7 +3,7 @@ import { can } from "./permissions.js";
 import { DOC_TYPES } from "./checklist.js";
 import {
   I, esc, fmtCLP, fmtDate, fmtDateTime, monthKey, dInput, docStatus,
-  iconSpan, emptyBox, toast, $, $$
+  iconSpan, emptyBox, toast, openSheet, closeSheet, $, $$
 } from "./ui.js";
 
 const EST = {
@@ -48,6 +48,19 @@ function truckStatus(id, orders, fallas) {
 }
 function orderTotal(o) { return (o.repuestos || []).reduce((s, x) => s + (Number(x.costo) || 0), 0) + (Number(o.manoObra) || 0); }
 
+// Semáforo de disponibilidad operativa del camión.
+// verde = operativo · amarillo = observación · rojo = fuera de servicio
+function availStatus(truckId, orders, fallas) {
+  const open = orders.filter(o => o.truckId === truckId && o.estado !== "completado");
+  const fs = fallas.filter(f => f.truckId === truckId);
+  const enTaller = open.find(o => o.estado === "en_taller");
+  if (enTaller) return { k: "fuera", cls: "crit", label: "Fuera de servicio", order: enTaller };
+  if (fs.some(f => f.sev === "alta")) return { k: "fuera", cls: "crit", label: "Fuera de servicio", order: open[0] || null };
+  const prog = open.find(o => o.estado === "agendado" || o.estado === "pendiente");
+  if (prog || fs.length) return { k: "observacion", cls: "warn", label: "Observación", order: prog || null };
+  return { k: "operativo", cls: "ok", label: "Operativo", order: null };
+}
+
 function docAlerts(trucks) {
   let vencidos = 0, porvencer = 0;
   trucks.forEach(t => {
@@ -69,8 +82,11 @@ async function dashboard(view, ctx) {
   ]);
   const fallas = openFallas(cks, bits, orders, resolved);
   const manage = can(p, "order.manage");
-  const conNovedad = trucks.filter(t => truckStatus(t.id, orders, fallas).cls !== "ok").length;
-  const operativos = trucks.length - conNovedad;
+  const avail = trucks.map(t => ({ t, a: availStatus(t.id, orders, fallas) }));
+  const nOp = avail.filter(x => x.a.k === "operativo").length;
+  const nObs = avail.filter(x => x.a.k === "observacion").length;
+  const nFuera = avail.filter(x => x.a.k === "fuera").length;
+  const operativos = nOp;
   const openOrders = orders.filter(o => o.estado !== "completado");
   const mesTotal = orders.filter(o => o.estado === "completado" && monthKey(o.completedAt) === monthKey()).reduce((s, o) => s + orderTotal(o), 0);
   const docs = docAlerts(trucks);
@@ -81,6 +97,20 @@ async function dashboard(view, ctx) {
     kpi("w", String(openOrders.length), "Órdenes abiertas", "en proceso o agendadas") +
     kpi("a", fmtCLP(mesTotal), "Costo del mes", "taller completado") +
     "</div>";
+
+  const availRows = avail.map(({ t, a }) =>
+    '<div class="row" data-avail="' + t.id + '" style="cursor:pointer"><span class="trucknum">' + esc(t.num) + "</span>" +
+    '<div class="rl"><div class="t">' + esc(t.marca + " " + (t.modelo || "")) + "</div>" +
+    '<div class="m"><span>' + esc(t.patente) + "</span>" + (a.order && a.order.otNumero ? "<span>" + esc(a.order.otNumero) + "</span>" : "") + "</div></div>" +
+    '<span class="pill ' + a.cls + '"><span class="dot"></span>' + a.label + "</span></div>"
+  ).join("");
+  const legend = '<div class="meta-line" style="display:flex;gap:12px;flex-wrap:wrap;margin:0 2px 10px;font-size:.82rem">' +
+    '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:9px;height:9px;border-radius:50%;background:var(--ok)"></span>' + nOp + " operativos</span>" +
+    '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:9px;height:9px;border-radius:50%;background:var(--warn)"></span>' + nObs + " observación</span>" +
+    '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:9px;height:9px;border-radius:50%;background:var(--crit)"></span>' + nFuera + " fuera</span></div>";
+  const availBoard = '<div class="section"><div class="subhead"><h2>Disponibilidad de flota</h2>' +
+    '<span class="pill ' + (nFuera ? "crit" : nObs ? "warn" : "ok") + '"><span class="dot"></span>' + nOp + " de " + trucks.length + " disponibles</span></div>" +
+    legend + '<div class="card">' + (trucks.length ? availRows : emptyBox("No hay camiones registrados")) + "</div></div>";
 
   const docBanner = (docs.vencidos || docs.porvencer)
     ? '<div class="banner" id="doc-banner" style="cursor:pointer">' + I.alert +
@@ -115,8 +145,9 @@ async function dashboard(view, ctx) {
   const done = orders.filter(o => o.estado === "completado").sort((a, b) => b.completedAt - a.completedAt).slice(0, 4);
   const doneBlock = done.length ? '<div class="section"><span class="eyebrow">Últimas completadas</span><div class="card" style="margin-top:8px">' + done.map(o => orderRow(o, trucks)).join("") + "</div></div>" : "";
 
-  view.innerHTML = docBanner + kpis + navRow + fallaCards + orderCards + doneBlock;
+  view.innerHTML = docBanner + kpis + availBoard + navRow + fallaCards + orderCards + doneBlock;
 
+  $$("[data-avail]", view).forEach(b => b.onclick = () => availSheet(ctx, b.getAttribute("data-avail"), trucks, orders, fallas));
   $("#nav-camiones", view).onclick = () => ctx.go("camiones", {});
   const nu = $("#nav-usuarios", view); if (nu) nu.onclick = () => ctx.go("usuarios", {});
   const db = $("#doc-banner", view); if (db) db.onclick = () => ctx.go("camiones", {});
@@ -140,14 +171,66 @@ function orderRow(o, trucks) {
     "</div></div><span class='arrow'>" + I.arrow + "</span></div>";
 }
 
+// Ficha de disponibilidad al tocar un camión en el semáforo.
+function availSheet(ctx, truckId, trucks, orders, fallas) {
+  const t = trucks.find(x => x.id === truckId); if (!t) return;
+  const a = availStatus(truckId, orders, fallas);
+  let body = '<div class="stat-truck" style="margin-bottom:16px"><span class="trucknum">' + esc(t.num) + "</span>" +
+    '<div style="flex:1"><div style="font-weight:700;font-family:Barlow Semi Condensed;font-size:1.15rem">' + esc(t.marca + " " + (t.modelo || "")) + "</div>" +
+    '<div style="margin-top:4px"><span class="plate">' + esc(t.patente) + "</span></div></div>" +
+    '<span class="pill ' + a.cls + '"><span class="dot"></span>' + a.label + "</span></div>";
+
+  if (a.k === "operativo") {
+    body += '<p class="meta-line">Operativo, sin novedades pendientes. Disponible para operar.</p>';
+  } else if (a.order) {
+    const o = a.order, estim = Number(o.costoEstimado) || 0;
+    body += '<div class="card pad" style="box-shadow:none;border-color:var(--line)">' +
+      row2("Estado", EST[o.estado].l) +
+      (o.otNumero ? row2("N° de orden", o.otNumero) : "") +
+      row2("Fuera de servicio desde", fmtDate(o.fechaAgendada || o.createdAt)) +
+      row2("Problema", o.titulo) +
+      (o.taller ? row2("Taller", o.taller) : "") +
+      (estim ? row2("Reparación estimada", fmtCLP(estim)) : "") +
+      (o.fechaEntregaEstimada ? row2("Entrega estimada", fmtDate(o.fechaEntregaEstimada)) : "") +
+      "</div>";
+    if (can(ctx.profile, "order.manage"))
+      body += '<button class="btn btn-primary" style="margin-top:14px" id="av-order">' + I.wrench + "Ver o editar la orden</button>";
+  } else {
+    const fs = fallas.filter(f => f.truckId === truckId);
+    body += '<p class="meta-line" style="margin-bottom:10px">Novedades reportadas, sin orden de taller todavía:</p>' +
+      '<div class="card" style="box-shadow:none">' + fs.map(f =>
+        '<div class="row"><span class="sev-stripe sev-' + f.sev + '"></span><div class="rl"><div class="t">' + esc(f.titulo) +
+        '</div><div class="m"><span>' + esc(f.origen) + "</span><span>" + fmtDate(f.ts) + "</span></div></div></div>").join("") + "</div>";
+    if (can(ctx.profile, "order.manage") && fs[0])
+      body += '<button class="btn btn-primary" style="margin-top:14px" id="av-crear">' + I.wrench + "Crear orden de taller</button>";
+  }
+
+  openSheet("Disponibilidad · " + t.num, body, () => {
+    const bo = $("#av-order"); if (bo) bo.onclick = () => { closeSheet(); orderDraft = null; ctx.go("order", { id: a.order.id }); };
+    const bc = $("#av-crear"); if (bc) bc.onclick = () => { const fs = fallas.filter(f => f.truckId === truckId); closeSheet(); createOrder(ctx, fs[0].id, fallas); };
+  });
+}
+function row2(k, v) {
+  return '<div style="display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px solid var(--line)">' +
+    '<span class="meta-line">' + esc(k) + '</span><b style="text-align:right;font-weight:600">' + esc(v) + "</b></div>";
+}
+
 async function createOrder(ctx, fid, fallas) {
   const f = fallas.find(x => x.id === fid); if (!f) return;
+  let otNumero = "";
+  try {
+    const all = await store.listOrders();
+    const yr = new Date().getFullYear();
+    const seq = all.filter(o => o.otNumero && o.otNumero.indexOf("OT-" + yr + "-") === 0).length + 1;
+    otNumero = "OT-" + yr + "-" + String(seq).padStart(4, "0");
+  } catch (e) { otNumero = "OT-" + new Date().getFullYear() + "-" + String(Date.now()).slice(-4); }
   const o = {
-    truckId: f.truckId, titulo: f.titulo.length > 46 ? f.titulo.slice(0, 46) + "..." : f.titulo, detalle: f.detalle,
+    truckId: f.truckId, otNumero, titulo: f.titulo.length > 46 ? f.titulo.slice(0, 46) + "..." : f.titulo, detalle: f.detalle,
     sources: [fid], reportadoPor: f.driver, estado: "agendado", taller: "", fechaAgendada: null,
+    costoEstimado: 0, fechaEntregaEstimada: null,
     trabajo: "", repuestos: [], manoObra: 0, createdBy: ctx.profile.uid, createdAt: Date.now(), completedAt: null
   };
-  try { await store.saveOrder(null, o); toast("Orden de taller creada", "ok"); ctx.go("home", {}); }
+  try { await store.saveOrder(null, o); toast("Orden creada: " + otNumero, "ok"); ctx.go("home", {}); }
   catch (e) { toast("No se pudo crear: " + (e.message || e), "err"); }
 }
 async function resolveFalla(ctx, fid) {
@@ -165,6 +248,7 @@ async function orderDetail(view, ctx) {
   const editable = can(ctx.profile, "order.manage");
   if (!orderDraft) orderDraft = {
     estado: o.estado, taller: o.taller || "", fecha: o.fechaAgendada ? dInput(o.fechaAgendada) : "",
+    estim: o.costoEstimado || "", entrega: o.fechaEntregaEstimada ? dInput(o.fechaEntregaEstimada) : "",
     trabajo: o.trabajo || "", manoObra: o.manoObra || "", repuestos: (o.repuestos || []).map(r => ({ desc: r.desc, costo: r.costo }))
   };
   const d = orderDraft;
@@ -183,12 +267,14 @@ async function orderDetail(view, ctx) {
     '<div class="subhead"><h2>Orden de taller</h2><span class="pill ' + e.c + '">' + e.l + "</span></div>" +
     '<div class="card pad section"><div class="stat-truck"><span class="trucknum">' + esc(t.num) + "</span>" +
     '<div style="flex:1"><div style="font-weight:700;font-family:Barlow Semi Condensed;font-size:1.05rem">' + esc(o.titulo) + "</div>" +
-    '<div class="meta-line" style="margin-top:3px">' + esc(t.marca + " · " + t.patente) + "</div></div></div>" +
+    '<div class="meta-line" style="margin-top:3px">' + esc(t.marca + " · " + t.patente) + (o.otNumero ? " · " + esc(o.otNumero) : "") + "</div></div></div>" +
     (o.detalle ? '<p style="margin:12px 0 0;font-size:.9rem;color:var(--ink-2)">' + esc(o.detalle) + "</p>" : "") +
     '<div class="meta-line" style="margin-top:8px;font-size:.8rem">Reportado por ' + esc(o.reportadoPor || "chofer") + " · " + fmtDateTime(o.createdAt) + "</div></div>" +
     '<div class="card pad section"><label class="fld"><span class="lb">Estado</span><div class="chips">' + estChips + "</div></label>" +
     '<label class="fld"><span class="lb">Taller</span><input class="input" id="o-taller" placeholder="Nombre del taller" value="' + esc(d.taller) + '"' + (editable ? "" : " disabled") + "></label>" +
-    '<label class="fld" style="margin-bottom:0"><span class="lb">Fecha agendada</span><input class="input" type="date" id="o-fecha" value="' + esc(d.fecha) + '"' + (editable ? "" : " disabled") + "></label></div>" +
+    '<label class="fld"><span class="lb">Fecha agendada</span><input class="input" type="date" id="o-fecha" value="' + esc(d.fecha) + '"' + (editable ? "" : " disabled") + "></label>" +
+    '<label class="fld"><span class="lb">Costo estimado de reparación</span><input class="input num" id="o-estim" inputmode="numeric" placeholder="$" value="' + esc(d.estim) + '"' + (editable ? "" : " disabled") + "></label>" +
+    '<label class="fld" style="margin-bottom:0"><span class="lb">Fecha estimada de entrega</span><input class="input" type="date" id="o-entrega" value="' + esc(d.entrega) + '"' + (editable ? "" : " disabled") + "></label></div>" +
     (showWork ? '<div class="card pad section"><span class="eyebrow" style="display:block;margin-bottom:12px">Trabajo realizado</span>' +
       '<label class="fld"><span class="lb">Descripción del trabajo</span><textarea class="input" id="o-trabajo" placeholder="Qué se hizo en el taller..."' + (editable ? "" : " disabled") + ">" + esc(d.trabajo) + "</textarea></label>" +
       '<span class="lb" style="display:block;font-family:Barlow Semi Condensed;font-weight:600;font-size:.82rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-2);margin-bottom:8px">Repuestos</span>' +
@@ -202,8 +288,9 @@ async function orderDetail(view, ctx) {
   if (!editable) return;
   $$("[data-est]", view).forEach(b => b.onclick = () => { syncOrder(view); d.estado = b.getAttribute("data-est"); orderDetail(view, ctx); });
   const bindF = (id, f) => { const el = $(id, view); if (el) el.oninput = () => { d[f] = el.value; }; };
-  bindF("#o-taller", "taller"); bindF("#o-trabajo", "trabajo"); bindF("#o-mano", "manoObra");
+  bindF("#o-taller", "taller"); bindF("#o-trabajo", "trabajo"); bindF("#o-mano", "manoObra"); bindF("#o-estim", "estim");
   const fecha = $("#o-fecha", view); if (fecha) fecha.onchange = () => { d.fecha = fecha.value; };
+  const entrega = $("#o-entrega", view); if (entrega) entrega.onchange = () => { d.entrega = entrega.value; };
   $$("[data-rep]", view).forEach(inp => inp.oninput = () => {
     const i = +inp.getAttribute("data-rep"), f = inp.getAttribute("data-f");
     d.repuestos[i][f] = inp.value; if (f === "costo") { const el = $(".total-line b", view); if (el) el.textContent = fmtCLP(d.repuestos.reduce((s, r) => s + (Number(r.costo) || 0), 0) + (Number(d.manoObra) || 0)); }
@@ -217,6 +304,8 @@ async function orderDetail(view, ctx) {
     const patch = {
       estado: d.estado, taller: String(d.taller).trim(),
       fechaAgendada: d.fecha ? new Date(d.fecha + "T12:00:00").getTime() : null,
+      costoEstimado: Math.round(Number(d.estim) || 0),
+      fechaEntregaEstimada: d.entrega ? new Date(d.entrega + "T12:00:00").getTime() : null,
       trabajo: String(d.trabajo).trim(), repuestos: reps, manoObra: Math.round(Number(d.manoObra) || 0),
       completedAt: d.estado === "completado" ? (o.completedAt || Date.now()) : null
     };
@@ -231,6 +320,8 @@ function syncOrder(view) {
   const tl = g("#o-taller"); if (tl !== undefined) d.taller = tl;
   const tr = g("#o-trabajo"); if (tr !== undefined) d.trabajo = tr;
   const mo = g("#o-mano"); if (mo !== undefined) d.manoObra = mo;
+  const es = g("#o-estim"); if (es !== undefined) d.estim = es;
   const fc = g("#o-fecha"); if (fc !== undefined) d.fecha = fc;
+  const en = g("#o-entrega"); if (en !== undefined) d.entrega = en;
   $$("[data-rep]", view).forEach(inp => { const i = +inp.getAttribute("data-rep"), f = inp.getAttribute("data-f"); if (d.repuestos[i]) d.repuestos[i][f] = inp.value; });
 }
