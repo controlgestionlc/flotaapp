@@ -103,8 +103,9 @@ async function routeTo(view) {
 }
 
 // ---- historial / botón atrás ----
-function goHomeInternal() {
-  ctx.route = "home"; ctx.params = {}; window.scrollTo(0, 0); renderShell();
+// Deja dos entradas: una "base" (para atrapar el atrás) y "home".
+function setupHistory() {
+  try { history.replaceState({ bf: "base" }, ""); history.pushState({ bf: "home" }, ""); } catch (e) {}
 }
 function onPop(e) {
   const st = (e && e.state) || {};
@@ -113,16 +114,16 @@ function onPop(e) {
     ctx.route = st.route; ctx.params = st.params || {}; window.scrollTo(0, 0); renderShell();
     return;
   }
-  // Volvimos al ancla (menú principal)
-  if (isHome()) {
-    if (confirm("¿Cerrar la aplicación?")) {
-      try { history.back(); } catch (e2) {}
-    } else {
-      try { history.pushState({ bf: "home" }, ""); } catch (e2) {}
-    }
+  if (st.bf === "home") {
+    ctx.route = "home"; ctx.params = {}; window.scrollTo(0, 0); renderShell();
+    return;
+  }
+  // st.bf === "base" (o desconocido): intento de salir desde el menú principal
+  if (confirm("¿Cerrar la aplicación?")) {
+    try { history.back(); } catch (e2) {}
   } else {
-    goHomeInternal();
     try { history.pushState({ bf: "home" }, ""); } catch (e2) {}
+    ctx.route = "home"; ctx.params = {}; window.scrollTo(0, 0); renderShell();
   }
 }
 
@@ -131,7 +132,7 @@ async function onLogin(email, password, btn) {
     if (btn) { btn.disabled = true; btn.dataset.label = btn.textContent; btn.textContent = "Ingresando..."; }
     ctx.profile = await store.login(email, password);
     ctx.route = "home"; ctx.params = {};
-    try { history.replaceState({ bf: "home" }, ""); } catch (e) {}
+    setupHistory();
     await renderShell();
   } catch (e) {
     toast(e.message || "No se pudo iniciar sesión", "err");
@@ -152,7 +153,7 @@ async function onLogin(email, password, btn) {
       "<div>No se pudo iniciar la app: " + esc(e.message || e) + "</div></div></div>";
     return;
   }
-  try { history.replaceState({ bf: "home" }, ""); } catch (e) {}
   window.addEventListener("popstate", onPop);
+  if (ctx.profile) setupHistory();
   await renderShell();
 })();
