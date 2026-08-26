@@ -2,7 +2,7 @@ import { store } from "./store.js";
 import { CK_ITEMS } from "./checklist.js";
 import {
   I, esc, uid, fmtCLP, fmtDate, fmtDateTime, todayKey, dInput, iconSpan, emptyBox,
-  toast, captureGPS, gpsText, $, $$
+  toast, captureGPS, gpsText, openSheet, closeSheet, $, $$
 } from "./ui.js";
 
 let draft = {};
@@ -38,22 +38,43 @@ function pickTruck(view, ctx, trucks) {
       '<span class="pill ' + st.cls + '"><span class="dot"></span>' + st.label + "</span></button>";
   }).join("");
   view.innerHTML =
-    '<section class="section" style="margin-top:6px"><span class="eyebrow">Inicio de turno</span>' +
+    '<section class="section" style="margin-top:6px"><span class="eyebrow">Paso 1 · Inicio de turno</span>' +
     '<h1 style="font-size:1.5rem;margin:6px 0 6px">Hola, ' + esc(ctx.profile.nombre.split(" ")[0]) + "</h1>" +
-    '<p class="meta-line" style="margin-bottom:16px">Elige el camión con el que trabajarás hoy.</p>' +
+    '<p class="meta-line" style="margin-bottom:16px">Antes de operar, selecciona el camión con el que trabajarás hoy.</p>' +
     '<div class="tiles">' + (opts || emptyBox("No hay camiones registrados")) + "</div></section>";
-  $$("[data-pick]", view).forEach(b => b.onclick = () => { ctx.setTruck(b.getAttribute("data-pick")); ctx.go("home", { screen: "home" }); });
+  $$("[data-pick]", view).forEach(b => b.onclick = () => confirmTruck(ctx, trucks.find(t => t.id === b.getAttribute("data-pick"))));
+}
+
+// Ventana de confirmación antes de asignar el camión al turno.
+function confirmTruck(ctx, t) {
+  if (!t) return;
+  openSheet("Confirmar camión del turno",
+    '<div class="stat-truck" style="margin-bottom:14px"><span class="trucknum">' + esc(t.num) + "</span>" +
+      '<div style="flex:1"><div style="font-weight:700;font-family:Barlow Semi Condensed;font-size:1.15rem">' + esc(t.marca + " " + (t.modelo || "")) + "</div>" +
+      '<div style="margin-top:4px"><span class="plate">' + esc(t.patente) + "</span></div></div></div>" +
+    '<p class="meta-line" style="margin:0 0 16px">¿Confirmas que trabajarás hoy con este camión? Quedará asignado a tu turno y luego deberás registrar el checklist.</p>' +
+    '<button class="btn btn-primary" id="ct-ok" style="width:100%">' + I.check + "Sí, confirmar camión</button>" +
+    '<button class="btn btn-soft" id="ct-cancel" style="width:100%;margin-top:8px">Elegir otro</button>',
+    () => {
+      $("#ct-ok").onclick = () => { ctx.setTruck(t.id); closeSheet(); ctx.go("home", { screen: "home", justPicked: 1 }); };
+      $("#ct-cancel").onclick = () => closeSheet();
+    });
 }
 
 async function home(view, ctx, t) {
   const [cks, trips] = await Promise.all([store.listChecklists(), store.listTrips()]);
   const doneToday = cks.some(c => c.truckId === t.id && todayKey(c.ts) === todayKey());
   const abiertos = trips.filter(v => v.truckId === t.id && v.estado !== "cerrado");
+  const ckAlert = !doneToday
+    ? '<div class="banner" id="c-ck-alert" style="cursor:pointer;border-left-color:var(--warn);background:var(--warn-soft)">' + I.alert +
+      "<div><b>Registra el checklist de inicio de turno.</b> Es el siguiente paso antes de operar el camión.</div></div>"
+    : "";
   const alerta = abiertos.length
     ? '<div class="banner" id="c-open-alert" style="cursor:pointer;border-left-color:var(--warn);background:var(--warn-soft)">' + I.alert +
       "<div><b>Tienes " + abiertos.length + " viaje(s) sin terminar.</b> Toca para registrar la llegada o el término.</div></div>"
     : "";
   view.innerHTML =
+    ckAlert +
     alerta +
     '<div class="card pad section" style="margin-bottom:16px"><div class="stat-truck">' +
       '<span class="trucknum">' + esc(t.num) + "</span>" +
@@ -78,9 +99,24 @@ async function home(view, ctx, t) {
   $("#c-viaje", view).onclick = () => ctx.go("home", { screen: "viaje" });
   const cc = $("#c-cerrar", view); if (cc) cc.onclick = () => ctx.go("home", { screen: "viajesAbiertos" });
   const oa = $("#c-open-alert", view); if (oa) oa.onclick = () => ctx.go("home", { screen: "viajesAbiertos" });
+  const ca = $("#c-ck-alert", view); if (ca) ca.onclick = () => ctx.go("home", { screen: "checklist" });
   $("#c-bitacora", view).onclick = () => ctx.go("home", { screen: "bitacora" });
   $("#c-historial", view).onclick = () => ctx.go("home", { screen: "historial" });
   $("#c-changetruck", view).onclick = () => { ctx.setTruck(null); ctx.go("home", { screen: "home" }); };
+
+  // Justo después de confirmar el camión, indicar que debe registrar el checklist.
+  if (ctx.params.justPicked && !doneToday) {
+    ctx.params.justPicked = 0;
+    openSheet("Camión confirmado · " + t.num,
+      '<p style="margin:0 0 6px;font-weight:600">Ahora registra el checklist de inicio de turno</p>' +
+      '<p class="meta-line" style="margin:0 0 16px">Revisa el camión antes de salir. Es el paso obligatorio para dejar el turno en regla.</p>' +
+      '<button class="btn btn-primary" id="cp-ck" style="width:100%">' + I.check + "Registrar checklist ahora</button>" +
+      '<button class="btn btn-soft" id="cp-later" style="width:100%;margin-top:8px">Más tarde</button>',
+      () => {
+        $("#cp-ck").onclick = () => { closeSheet(); ctx.go("home", { screen: "checklist" }); };
+        $("#cp-later").onclick = () => closeSheet();
+      });
+  }
 }
 
 function tile(id, ic, title, sub) {
