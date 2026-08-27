@@ -1,5 +1,6 @@
 import { store } from "./store.js";
 import { CK_ITEMS } from "./checklist.js";
+import { weekInfo, dayKey, toMin } from "./planning.js";
 import {
   I, esc, uid, fmtCLP, fmtDate, fmtDateTime, todayKey, dInput, iconSpan, emptyBox,
   toast, captureGPS, gpsText, openSheet, closeSheet, $, $$
@@ -285,29 +286,82 @@ function prodListHTML(d) {
 function fmtWait(ms) { if (!ms || ms < 0) return "-"; const m = Math.round(ms / 60000); const h = Math.floor(m / 60); const mm = m % 60; return h ? (h + " h " + mm + " min") : (mm + " min"); }
 
 async function viajeSalida(view, ctx, t) {
-  if (!draft.viaje) draft.viaje = { predio: "", guia: "", gps: null, gpsState: "idle" };
+  const [plans, faenas] = await Promise.all([store.listPlans(), store.listFaenas()]);
+  const dk = dayKey(Date.now());
+  const wk = weekInfo(Date.now());
+  const plan = plans.find(p => p.id === wk.key);
+  const asigs = (plan && plan.asignaciones || [])
+    .filter(a => a.camionId === t.id && a.fecha === dk && a.faenaId)
+    .sort((a, b) => (a.turnoInicio || "").localeCompare(b.turnoInicio || ""));
+
+  // Sin planificación para hoy → no se puede iniciar viaje.
+  if (!asigs.length) {
+    view.innerHTML =
+      '<button class="backlink" id="vj-back">' + I.back + " Volver</button>" +
+      '<div class="subhead"><h2>Salida del predio</h2><span class="pill neutral">Etapa 1 de 3</span></div>' +
+      '<p class="meta-line" style="margin:-4px 2px 14px">' + esc(t.num + " · " + t.patente) + "</p>" +
+      '<div class="card pad section" style="border-color:var(--crit)"><div style="display:flex;gap:10px;align-items:flex-start">' + I.alert +
+        '<div><b>No tienes planificación para hoy</b><p class="meta-line" style="margin:6px 0 0">Este camión no tiene viajes programados para hoy, por lo que no puedes iniciar un viaje. Avisa a tu supervisor para que te asigne una faena.</p></div></div></div>';
+    $("#vj-back", view).onclick = () => ctx.go("home", { screen: "home" });
+    return;
+  }
+
+  if (!draft.viaje) draft.viaje = { asignacionId: "", predio: "", guia: "", gps: null, gpsState: "idle" };
   const d = draft.viaje;
+  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const inSlot = a => { const i = toMin(a.turnoInicio), f = toMin(a.turnoFin); return i != null && f != null && i <= nowMin && nowMin < f; };
+  const faOf = a => faenas.find(f => f.id === a.faenaId) || {};
+  // Selección inicial: la faena cuyo horario incluye la hora actual, o la primera.
+  if (!d.asignacionId || !asigs.some(a => a.id === d.asignacionId)) {
+    const cur = asigs.find(inSlot) || asigs[0];
+    d.asignacionId = cur.id;
+    d.predio = faOf(cur).ubicacion || faOf(cur).nombre || "";
+  }
+  const sel = asigs.find(a => a.id === d.asignacionId) || asigs[0];
+
+  const opts = asigs.map(a => {
+    const fa = faOf(a); const on = a.id === d.asignacionId; const now = inSlot(a);
+    return '<button class="tile' + (on ? " sel" : "") + '" data-asig="' + a.id + '"><span class="tx"><b>' + esc(fa.nombre || "Faena") +
+      (now ? ' <span class="pill ok">Ahora</span>' : "") + "</b><span>" + esc((a.turnoInicio || "--") + " ─ " + (a.turnoFin || "--")) + " · " + (a.viajesObjetivo || 0) + " viajes" +
+      (fa.destino ? " · → " + esc(fa.destino) : "") + "</span></span>" + (on ? I.check : "") + "</button>";
+  }).join("");
+
   view.innerHTML =
     '<button class="backlink" id="vj-back">' + I.back + " Volver</button>" +
     '<div class="subhead"><h2>Salida del predio</h2><span class="pill neutral">Etapa 1 de 3</span></div>' +
     '<p class="meta-line" style="margin:-4px 2px 14px">' + esc(t.num + " · " + t.patente) + "</p>" +
+    '<div class="section"><span class="eyebrow">Tu planificación de hoy</span>' +
+      '<p class="meta-line" style="font-size:.82rem;margin:4px 2px 10px">Elige la faena que vas a realizar según el horario en que estás trabajando.</p>' +
+      '<div class="tiles">' + opts + "</div></div>" +
     '<div class="card pad section">' + gpsBox(d) + '<p class="meta-line" style="font-size:.8rem;margin:10px 2px 0">La salida se registra con la fecha, hora y GPS actuales. Si no hay señal, se guarda igual y se sube al recuperarla.</p></div>' +
     '<div class="card pad section">' +
-      '<label class="fld"><span class="lb">Nombre del predio de origen</span><input class="input" id="vj-predio" placeholder="Predio de carga" value="' + esc(d.predio) + '"></label>' +
+      '<label class="fld"><span class="lb">Predio de origen</span><input class="input" id="vj-predio" placeholder="Predio de carga" value="' + esc(d.predio) + '"></label>' +
       '<label class="fld" style="margin-bottom:0"><span class="lb">Guía de despacho</span><input class="input" id="vj-guia" placeholder="N° de guía" value="' + esc(d.guia) + '"></label>' +
     "</div>" +
     '<div class="formbar"><button class="btn btn-primary" id="vj-submit">' + I.route + "Registrar salida</button></div>";
-  const sync = () => { ["predio", "guia"].forEach(k => { const el = $("#vj-" + k, view); if (el) d[k] = el.value; }); };
+
   ["predio", "guia"].forEach(k => { const el = $("#vj-" + k, view); if (el) el.oninput = () => { d[k] = el.value; }; });
-  const gb = $("#gps-btn", view); if (gb) gb.onclick = () => { d.gpsState = "loading"; viajeSalida(view, ctx, t); captureGPS((g, err) => { d.gps = g; d.gpsState = g ? "ok" : (err || "error"); if (ctx.params.screen === "viaje") viajeSalida(view, ctx, t); }); };
+  $$("[data-asig]", view).forEach(b => b.onclick = () => {
+    const el = $("#vj-predio", view); if (el) d.predio = el.value;
+    const gl = $("#vj-guia", view); if (gl) d.guia = gl.value;
+    const a = asigs.find(x => x.id === b.getAttribute("data-asig"));
+    d.asignacionId = a.id; d.predio = faOf(a).ubicacion || faOf(a).nombre || "";
+    viajeSalida(view, ctx, t);
+  });
+  const gb = $("#gps-btn", view); if (gb) gb.onclick = () => { const el = $("#vj-predio", view); if (el) d.predio = el.value; const gl = $("#vj-guia", view); if (gl) d.guia = gl.value; d.gpsState = "loading"; viajeSalida(view, ctx, t); captureGPS((g, err) => { d.gps = g; d.gpsState = g ? "ok" : (err || "error"); if (ctx.params.screen === "viaje") viajeSalida(view, ctx, t); }); };
   $("#vj-back", view).onclick = () => { draft.viaje = null; ctx.go("home", { screen: "home" }); };
   $("#vj-submit", view).onclick = async () => {
-    sync();
+    const pel = $("#vj-predio", view); if (pel) d.predio = pel.value;
+    const gel = $("#vj-guia", view); if (gel) d.guia = gel.value;
+    if (!d.asignacionId) { toast("Elige la faena planificada", "err"); return; }
     if (!d.predio.trim()) { toast("Indica el predio de origen", "err"); return; }
+    const fa = faOf(sel);
     const now = Date.now(), id = uid("trip");
     const rec = {
       id, truckId: t.id, patente: t.patente, uid: ctx.profile.uid, deviceId: store.deviceId(), driverNombre: ctx.profile.nombre,
       estado: "salida", origen: d.predio.trim(), predio: d.predio.trim(), guiaDespacho: (d.guia || "").trim(),
+      planId: plan ? plan.id : null, asignacionId: sel.id, faenaId: sel.faenaId, faena: fa.nombre || "", faenaDestino: fa.destino || "",
+      turnoPlan: (sel.turnoInicio || "") + " ─ " + (sel.turnoFin || ""),
       salida: now, salidaGps: d.gps || null, plantaDestino: "", llegada: null, llegadaGps: null, salidaPlanta: null, salidaPlantaGps: null,
       gmm: "", producto: null, volumen: 0, unidad: "", tiempoEspera: null, ts: now, importado: false
     };
@@ -348,7 +402,7 @@ async function viajeLlegada(view, ctx, t) {
   const trips = await store.listTrips();
   const trip = trips.find(v => v.id === tripId);
   if (!trip) { toast("Viaje no encontrado", "err"); return ctx.go("home", { screen: "viajesAbiertos" }); }
-  if (!draft.lleg || draft.lleg.tripId !== tripId) draft.lleg = { tripId, planta: trip.plantaDestino || "", gps: null, gpsState: "idle" };
+  if (!draft.lleg || draft.lleg.tripId !== tripId) draft.lleg = { tripId, planta: trip.plantaDestino || trip.faenaDestino || "", gps: null, gpsState: "idle" };
   const d = draft.lleg;
   const plants = Array.from(new Set(trips.map(v => v.plantaDestino).filter(Boolean)));
   view.innerHTML =
