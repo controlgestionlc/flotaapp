@@ -219,6 +219,8 @@ hr.sep{border:0;border-top:1px solid var(--line);margin:16px 0}
 .doc-row .dl .dn{font-weight:600;font-size:.92rem}
 .doc-row .dl .dm{color:var(--muted);font-size:.8rem;margin-top:2px}
 
+.c-topbar{display:flex;justify-content:flex-start;margin:2px 0 12px}
+
 /* planificación de flota */
 .pl-weeknav{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .pl-weeklabel{text-align:center;line-height:1.2}

@@ -220,7 +220,7 @@ function openAssignment(view, ctx, plan, refs, camionId, dk) {
     '<label class="fld"><span class="lb">Faena</span><select class="input" id="as-faena">' + faOpts + "</select></label>" +
     '<label class="fld"><span class="lb">Conductor</span><select class="input" id="as-cond">' + coOpts + "</select></label>" +
     '<div class="grid2"><label class="fld"><span class="lb">Viajes objetivo</span><input class="input num" id="as-viajes" inputmode="numeric" value="' + esc(d.viajesObjetivo) + '"></label>' +
-    '<label class="fld"><span class="lb">m³ objetivo</span><input class="input num" id="as-vol" inputmode="numeric" value="' + esc(d.volumenObjetivo) + '"></label></div>' +
+    '<label class="fld"><span class="lb">MR / M3 (Objetivo)</span><input class="input num" id="as-vol" inputmode="numeric" value="' + esc(d.volumenObjetivo) + '"></label></div>' +
     '<div class="grid2"><label class="fld"><span class="lb">Turno inicio</span><input class="input" type="time" id="as-ini" value="' + esc(d.turnoInicio) + '"></label>' +
     '<label class="fld"><span class="lb">Turno término</span><input class="input" type="time" id="as-fin" value="' + esc(d.turnoFin) + '"></label></div>' +
     '<button class="btn btn-primary" id="as-ok" style="width:100%">' + I.check + "Guardar asignación</button>" +
@@ -492,7 +492,7 @@ async function faenasScreen(view, ctx) {
     const ac = faenaAccess(f);
     return '<div class="row" data-fa="' + f.id + '" style="cursor:pointer"><span class="sev-stripe ' + (ac.cls === "crit" ? "sev-alta" : ac.cls === "warn" ? "sev-media" : "sev-baja") + '"></span>' +
       '<div class="rl"><div class="t">' + esc(f.nombre) + ' <span class="pill ' + ac.cls + '"><span class="dot"></span>' + ac.label + "</span></div>" +
-      '<div class="m"><span>' + esc(f.ubicacion || "") + "</span>" + (f.destino ? "<span>→ " + esc(f.destino) + "</span>" : "") + (f.capacidadDia ? "<span>" + f.capacidadDia + " v./día</span>" : "") + "</div></div><span class='arrow'>" + I.arrow + "</span></div>";
+      '<div class="m"><span>' + esc([f.ubicacion, f.comuna].filter(Boolean).join(", ")) + "</span>" + (f.destino ? "<span>→ " + esc(f.destino) + "</span>" : "") + (f.capacidadDia ? "<span>" + f.capacidadDia + " v./día</span>" : "") + "</div></div><span class='arrow'>" + I.arrow + "</span></div>";
   }).join("") : emptyBox("No hay faenas registradas");
   view.innerHTML =
     '<button class="backlink" id="fa-back">' + I.back + " Planificación</button>" +
@@ -506,7 +506,7 @@ async function faenasScreen(view, ctx) {
 async function faenaForm(view, ctx, id) {
   const f = id ? (await store.getFaena(id)) || {} : {};
   const d = {
-    nombre: f.nombre || "", ubicacion: f.ubicacion || "", tipoMadera: f.tipoMadera || "", destino: f.destino || "",
+    nombre: f.nombre || "", ubicacion: f.ubicacion || "", comuna: f.comuna || "", tipoMadera: f.tipoMadera || "", destino: f.destino || "",
     distancia: f.distancia || "", tiempoCiclo: f.tiempoCiclo || "", capacidadDia: f.capacidadDia || "",
     estadoAcceso: f.estadoAcceso || "operativa", restricciones: f.restricciones || "", activa: f.activa !== false
   };
@@ -516,7 +516,8 @@ async function faenaForm(view, ctx, id) {
     '<div class="subhead"><h2>' + (id ? "Editar faena" : "Nueva faena") + "</h2></div>" +
     '<div class="card pad section">' +
       '<label class="fld"><span class="lb">Nombre</span><input class="input" id="ff-nombre" value="' + esc(d.nombre) + '"></label>' +
-      '<label class="fld"><span class="lb">Ubicación</span><input class="input" id="ff-ubi" value="' + esc(d.ubicacion) + '"></label>' +
+      '<div class="grid2"><label class="fld"><span class="lb">Ubicación</span><input class="input" id="ff-ubi" value="' + esc(d.ubicacion) + '"></label>' +
+      '<label class="fld"><span class="lb">Comuna</span><input class="input" id="ff-comuna" value="' + esc(d.comuna) + '"></label></div>' +
       '<div class="grid2"><label class="fld"><span class="lb">Tipo de madera</span><input class="input" id="ff-mad" value="' + esc(d.tipoMadera) + '"></label>' +
       '<label class="fld"><span class="lb">Destino</span><input class="input" id="ff-dest" value="' + esc(d.destino) + '"></label></div>' +
       '<div class="grid2"><label class="fld"><span class="lb">Distancia (km)</span><input class="input num" id="ff-dist" inputmode="numeric" value="' + esc(d.distancia) + '"></label>' +
@@ -531,7 +532,7 @@ async function faenaForm(view, ctx, id) {
   $("#ff-save", view).onclick = async () => {
     const g = i => { const el = $(i, view); return el ? el.value : ""; };
     const rec = {
-      nombre: g("#ff-nombre").trim(), ubicacion: g("#ff-ubi").trim(), tipoMadera: g("#ff-mad").trim(), destino: g("#ff-dest").trim(),
+      nombre: g("#ff-nombre").trim(), ubicacion: g("#ff-ubi").trim(), comuna: g("#ff-comuna").trim(), tipoMadera: g("#ff-mad").trim(), destino: g("#ff-dest").trim(),
       distancia: Number(g("#ff-dist")) || 0, tiempoCiclo: Number(g("#ff-ciclo")) || 0, capacidadDia: Number(g("#ff-cap")) || 0,
       estadoAcceso: d.estadoAcceso, restricciones: g("#ff-restr").trim(), activa: true,
       createdAt: f.createdAt || Date.now()

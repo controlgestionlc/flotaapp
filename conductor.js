@@ -74,6 +74,7 @@ async function home(view, ctx, t) {
       "<div><b>Tienes " + abiertos.length + " viaje(s) sin terminar.</b> Toca para registrar la llegada o el término.</div></div>"
     : "";
   view.innerHTML =
+    '<div class="c-topbar"><button class="backlink" id="c-changetruck" style="margin:0">' + I.back + " Cambiar de camión</button></div>" +
     ckAlert +
     alerta +
     '<div class="card pad section" style="margin-bottom:16px"><div class="stat-truck">' +
@@ -92,8 +93,7 @@ async function home(view, ctx, t) {
       (abiertos.length ? tile("c-cerrar", I.check, "Viajes en curso (" + abiertos.length + ")", "Registrar llegada o término de entrega") : "") +
       tile("c-bitacora", I.note, "Registrar novedad", "Falla, incidente o kilometraje") +
       tile("c-historial", I.history, "Historial del camión", "Últimos checklists y registros") +
-    "</div>" +
-    '<button class="backlink" id="c-changetruck">' + I.back + " Cambiar de camión</button>";
+    "</div>";
   $("#c-checklist", view).onclick = () => ctx.go("home", { screen: "checklist" });
   $("#c-combustible", view).onclick = () => ctx.go("home", { screen: "combustible" });
   $("#c-viaje", view).onclick = () => ctx.go("home", { screen: "viaje" });
