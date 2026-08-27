@@ -6,7 +6,7 @@ import {
 } from "./ui.js";
 import {
   DIAS, DIAS_LARGO, weekInfo, dayKey, truckAvailability, driverAvailability,
-  faenaAccess, PLAN_ESTADOS, IMPREVISTO_TIPOS
+  truckTimeClash, toMin, faenaAccess, PLAN_ESTADOS, IMPREVISTO_TIPOS
 } from "./planning.js";
 
 // Timestamp dentro de la semana visualizada (se ajusta con la navegación).
@@ -101,12 +101,14 @@ async function semanal(view, ctx) {
     const av = truckAvailability(t, refs, weekTs);
     const cells = wk.dias.map(ts => {
       const dk = dayKey(ts);
-      const a = asigWeek.find(x => x.camionId === t.id && x.fecha === dk);
-      if (a && a.faenaId) {
-        const col = faColor(faenas, a.faenaId);
-        return '<td><button class="pl-cell" data-cell="' + t.id + "|" + dk + '" style="border-left:3px solid ' + col + '">' +
-          '<b style="color:' + col + '">' + esc(faName(faenas, a.faenaId)) + "</b>" +
-          '<span class="num">' + (Number(a.viajesObjetivo) || 0) + " v.</span></button></td>";
+      const as = asigWeek.filter(x => x.camionId === t.id && x.fecha === dk && x.faenaId);
+      if (as.length) {
+        const inner = as.map(a => {
+          const col = faColor(faenas, a.faenaId);
+          return '<span class="pl-fa" style="border-left:3px solid ' + col + '"><b style="color:' + col + '">' + esc(faName(faenas, a.faenaId)) + "</b>" +
+            '<span class="num">' + (Number(a.viajesObjetivo) || 0) + " v." + (a.turnoInicio ? " · " + esc(a.turnoInicio) : "") + "</span></span>";
+        }).join("");
+        return '<td><button class="pl-cell multi" data-cell="' + t.id + "|" + dk + '">' + inner + "</button></td>";
       }
       return '<td><button class="pl-cell empty" data-cell="' + t.id + "|" + dk + '">' + (canEdit ? "Reserva" : "—") + "</button></td>";
     }).join("");
@@ -154,13 +156,13 @@ async function semanal(view, ctx) {
   if (canEdit) {
     $$("[data-cell]", view).forEach(b => b.onclick = () => {
       const [camionId, dk] = b.getAttribute("data-cell").split("|");
-      openAssignment(view, ctx, plan, refs, camionId, dk);
+      openDay(view, ctx, plan, refs, camionId, dk);
     });
     const ob = $("#pl-obj", view); if (ob) ob.onclick = () => editObjetivo(view, ctx, plan);
     const ap = $("#pl-aprobar", view); if (ap) ap.onclick = () => aprobarPlan(view, ctx, plan);
     const rp = $("#pl-reprog", view); if (rp) rp.onclick = () => reprogramar(view, ctx, plan, refs);
   } else {
-    $$("[data-cell]", view).forEach(b => b.onclick = () => verAssignment(ctx, plan, refs, b.getAttribute("data-cell")));
+    $$("[data-cell]", view).forEach(b => b.onclick = () => verDay(ctx, plan, refs, b.getAttribute("data-cell")));
   }
 }
 
@@ -196,15 +198,44 @@ async function aprobarPlan(view, ctx, plan) {
   catch (e) { toast("No se pudo aprobar: " + (e.message || e), "err"); }
 }
 
-// -------- Ficha de asignación (crear / editar) --------
-function openAssignment(view, ctx, plan, refs, camionId, dk) {
+// -------- Día del camión: lista de viajes/faenas (varios por día) --------
+function openDay(view, ctx, plan, refs, camionId, dk) {
   const { trucks, faenas, conductores } = refs;
   const t = trucks.find(x => x.id === camionId) || { num: "?" };
   const dTs = new Date(dk + "T12:00:00").getTime();
-  const existing = plan.asignaciones.find(a => a.camionId === camionId && a.fecha === dk);
+  const dia = DIAS_LARGO[new Date(dTs).getDay() === 0 ? 6 : new Date(dTs).getDay() - 1];
+  const list = plan.asignaciones.filter(a => a.camionId === camionId && a.fecha === dk && a.faenaId)
+    .sort((a, b) => (a.turnoInicio || "").localeCompare(b.turnoInicio || ""));
+  const rows = list.length ? list.map(a => {
+    const co = conductores.find(c => c.uid === a.conductorId);
+    const col = faColor(faenas, a.faenaId);
+    return '<div class="row" data-edit="' + a.id + '" style="cursor:pointer"><span class="sev-stripe" style="background:' + col + '"></span>' +
+      '<div class="rl"><div class="t">' + esc(faName(faenas, a.faenaId)) + ' <span class="pill neutral">' + (a.viajesObjetivo || 0) + " v.</span></div>" +
+      '<div class="m"><span>' + esc((a.turnoInicio || "--") + " ─ " + (a.turnoFin || "--")) + "</span>" + (co ? "<span>" + esc(co.nombre) + "</span>" : "") + "</div></div><span class='arrow'>" + I.arrow + "</span></div>";
+  }).join("") : emptyBox("Día en reserva. Agrega el primer viaje.");
+  openSheet(t.num + " · " + fmtDate(dTs),
+    '<p class="meta-line" style="margin:0 0 10px">' + esc(dia) + ". Un camión puede tener varios viajes/faenas el mismo día, en horarios que no se crucen.</p>" +
+    '<div class="card" style="box-shadow:none;margin-bottom:12px">' + rows + "</div>" +
+    '<button class="btn btn-primary" id="dy-add" style="width:100%">' + I.plus + "Agregar viaje / faena</button>",
+    () => {
+      $("#dy-add").onclick = () => { closeSheet(); openAssignment(view, ctx, plan, refs, camionId, dk, null); };
+      $$("[data-edit]").forEach(b => b.onclick = () => { const id = b.getAttribute("data-edit"); closeSheet(); openAssignment(view, ctx, plan, refs, camionId, dk, id); });
+    });
+}
+
+// -------- Ficha de asignación (crear / editar un viaje) --------
+function openAssignment(view, ctx, plan, refs, camionId, dk, assignId) {
+  const { trucks, faenas, conductores } = refs;
+  const t = trucks.find(x => x.id === camionId) || { num: "?" };
+  const dTs = new Date(dk + "T12:00:00").getTime();
+  const existing = assignId ? plan.asignaciones.find(a => a.id === assignId) : null;
+  // Sugerencia de horario: si ya hay viajes ese día, parte al terminar el último.
+  const others = plan.asignaciones.filter(a => a.camionId === camionId && a.fecha === dk && a.faenaId && (!existing || a.id !== existing.id));
+  let defIni = "07:00", defFin = "17:00";
+  if (!existing && others.length) { const last = others.map(a => a.turnoFin).filter(Boolean).sort().pop(); if (last) { defIni = last; defFin = ""; } }
   const d = existing
     ? Object.assign({}, existing)
-    : { id: uid("as"), camionId, fecha: dk, conductorId: "", faenaId: "", turnoInicio: "07:00", turnoFin: "17:00", viajesObjetivo: "", volumenObjetivo: "", estado: "planificado" };
+    : { id: uid("as"), camionId, fecha: dk, conductorId: "", faenaId: "", turnoInicio: defIni, turnoFin: defFin, viajesObjetivo: "", volumenObjetivo: "", estado: "planificado" };
 
   const av = truckAvailability(t, refs, dTs);
   const dia = DIAS_LARGO[new Date(dTs).getDay() === 0 ? 6 : new Date(dTs).getDay() - 1];
@@ -226,15 +257,16 @@ function openAssignment(view, ctx, plan, refs, camionId, dk) {
     '<button class="btn btn-primary" id="as-ok" style="width:100%">' + I.check + "Guardar asignación</button>" +
     (existing ? '<button class="btn btn-soft" id="as-del" style="width:100%;margin-top:8px;color:var(--crit)">Quitar asignación (dejar reserva)</button>' : "");
 
-  openSheet(existing ? "Editar asignación" : "Nueva asignación", body, () => {
+  openSheet(existing ? "Editar viaje" : "Nuevo viaje / faena", body, () => {
     const refreshDriver = () => {
       const cid = $("#as-cond").value;
       const el = $("#as-driver"); if (!el) return;
       if (!cid) { el.innerHTML = ""; return; }
-      const da = driverAvailability(cid, plan, dTs, d.id);
+      const da = driverAvailability(cid, plan, dTs, d.id, $("#as-ini").value, $("#as-fin").value);
       el.innerHTML = da.items.map(checkRow).join("");
     };
     $("#as-cond").onchange = refreshDriver;
+    $("#as-ini").onchange = refreshDriver; $("#as-fin").onchange = refreshDriver;
     refreshDriver();
     $("#as-ok").onclick = async () => {
       d.faenaId = $("#as-faena").value;
@@ -245,40 +277,41 @@ function openAssignment(view, ctx, plan, refs, camionId, dk) {
       if (!d.faenaId) { toast("Selecciona una faena", "err"); return; }
       const fa = faenas.find(f => f.id === d.faenaId);
       if (fa && faenaAccess(fa).k === "cerrada") { toast("La faena está cerrada. Cambia el estado de acceso primero.", "err"); return; }
-      if (d.conductorId && !driverAvailability(d.conductorId, plan, dTs, d.id).ok) { toast("Ese conductor ya está asignado ese día", "err"); return; }
+      if (toMin(d.turnoInicio) == null || toMin(d.turnoFin) == null) { toast("Indica el horario de inicio y término", "err"); return; }
+      if (toMin(d.turnoFin) <= toMin(d.turnoInicio)) { toast("El término debe ser posterior al inicio", "err"); return; }
+      // Restricción: no se pueden cruzar dos viajes del mismo camión el mismo día.
+      if (truckTimeClash(plan, camionId, dTs, d.turnoInicio, d.turnoFin, d.id)) { toast("Este camión ya tiene un viaje en ese horario", "err"); return; }
+      if (d.conductorId && !driverAvailability(d.conductorId, plan, dTs, d.id, d.turnoInicio, d.turnoFin).ok) { toast("Ese conductor ya tiene un viaje en ese horario", "err"); return; }
       // upsert
       const idx = plan.asignaciones.findIndex(a => a.id === d.id);
       if (idx >= 0) plan.asignaciones[idx] = d; else plan.asignaciones.push(d);
       if (plan.estado === "planificado") plan.estado = "modificado";
-      try { await persistPlan(plan); closeSheet(); toast("Asignación guardada", "ok"); renderPlanificacion(view, ctx); }
+      try { await persistPlan(plan); closeSheet(); toast("Viaje guardado", "ok"); renderPlanificacion(view, ctx); }
       catch (e) { toast("No se pudo guardar: " + (e.message || e), "err"); }
     };
     const del = $("#as-del"); if (del) del.onclick = async () => {
       plan.asignaciones = plan.asignaciones.filter(a => a.id !== d.id);
       if (plan.estado === "planificado") plan.estado = "modificado";
-      try { await persistPlan(plan); closeSheet(); toast("Asignación quitada", "ok"); renderPlanificacion(view, ctx); }
+      try { await persistPlan(plan); closeSheet(); toast("Viaje quitado", "ok"); renderPlanificacion(view, ctx); }
       catch (e) { toast("No se pudo guardar: " + (e.message || e), "err"); }
     };
   });
 }
 
-// Solo lectura (gerente).
-function verAssignment(ctx, plan, refs, cellKey) {
+// Solo lectura (gerente): lista los viajes del día.
+function verDay(ctx, plan, refs, cellKey) {
   const [camionId, dk] = cellKey.split("|");
-  const a = plan.asignaciones.find(x => x.camionId === camionId && x.fecha === dk);
   const { trucks, faenas, conductores } = refs;
   const t = trucks.find(x => x.id === camionId) || { num: "?" };
-  if (!a || !a.faenaId) { toast("Día en reserva (sin asignación)", "ok"); return; }
-  const co = conductores.find(c => c.uid === a.conductorId);
-  openSheet("Asignación · " + t.num,
-    '<div class="card pad" style="box-shadow:none;border-color:var(--line)">' +
-    row2("Fecha", fmtDate(new Date(dk + "T12:00:00").getTime())) +
-    row2("Camión", t.num + " · " + (t.patente || "")) +
-    row2("Conductor", co ? co.nombre : "Sin asignar") +
-    row2("Faena", faName(faenas, a.faenaId)) +
-    row2("Viajes objetivo", String(a.viajesObjetivo || 0)) +
-    row2("m³ objetivo", String(a.volumenObjetivo || 0)) +
-    row2("Turno", (a.turnoInicio || "") + " ─ " + (a.turnoFin || "")) + "</div>", () => {});
+  const list = plan.asignaciones.filter(a => a.camionId === camionId && a.fecha === dk && a.faenaId)
+    .sort((a, b) => (a.turnoInicio || "").localeCompare(b.turnoInicio || ""));
+  if (!list.length) { toast("Día en reserva (sin asignación)", "ok"); return; }
+  const body = list.map(a => { const co = conductores.find(c => c.uid === a.conductorId);
+    return '<div class="card pad" style="box-shadow:none;border-color:var(--line);margin-bottom:10px">' +
+      row2("Faena", faName(faenas, a.faenaId)) + row2("Conductor", co ? co.nombre : "Sin asignar") +
+      row2("Viajes objetivo", String(a.viajesObjetivo || 0)) + row2("MR / M3 (Objetivo)", String(a.volumenObjetivo || 0)) +
+      row2("Turno", (a.turnoInicio || "") + " ─ " + (a.turnoFin || "")) + "</div>"; }).join("");
+  openSheet(t.num + " · " + fmtDate(new Date(dk + "T12:00:00").getTime()), body, () => {});
 }
 function row2(k, v) {
   return '<div style="display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px solid var(--line)"><span class="meta-line">' + esc(k) + '</span><b style="text-align:right;font-weight:600">' + esc(v) + "</b></div>";

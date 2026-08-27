@@ -243,6 +243,11 @@ hr.sep{border:0;border-top:1px solid var(--line);margin:16px 0}
 .pl-cell b{font-family:"Barlow Semi Condensed";font-size:.86rem;line-height:1.05}
 .pl-cell .num{color:var(--muted);font-size:.76rem}
 .pl-cell.empty{color:var(--muted);font-size:.78rem;justify-content:center;align-items:center;font-style:italic}
+.pl-cell.multi{gap:5px}
+.pl-fa{display:flex;flex-direction:column;gap:1px;padding-left:6px;width:100%}
+.pl-fa+.pl-fa{border-top:1px dashed var(--line);padding-top:5px}
+.pl-fa b{font-family:"Barlow Semi Condensed";font-size:.84rem;line-height:1.05}
+.pl-fa .num{color:var(--muted);font-size:.72rem}
 .pl-cell:hover{background:var(--surface-2)}
 .pl-matrix.ctrl td,.pl-matrix.ctrl th{text-align:center;padding:9px 8px}
 .pl-matrix.ctrl .pl-th-fix{text-align:left}

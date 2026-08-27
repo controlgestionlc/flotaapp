@@ -92,14 +92,38 @@ export function truckAvailability(t, data, dayTs) {
   return { ok, items };
 }
 
-// Disponibilidad de un conductor: ¿ya está asignado ese día a otro camión?
-export function driverAvailability(conductorId, plan, dTs, exceptAssignId) {
+// "HH:MM" -> minutos. Devuelve null si no es válido.
+export function toMin(hhmm) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || "").trim());
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+// ¿Dos rangos de horario se solapan? Sin horario válido => se asume conflicto.
+export function rangesOverlap(aIni, aFin, bIni, bFin) {
+  const a1 = toMin(aIni), a2 = toMin(aFin), b1 = toMin(bIni), b2 = toMin(bFin);
+  if (a1 == null || a2 == null || b1 == null || b2 == null) return true;
+  return a1 < b2 && b1 < a2;
+}
+
+// ¿El horario del camión choca con otra asignación del mismo día?
+export function truckTimeClash(plan, camionId, dTs, ini, fin, exceptAssignId) {
+  const dk = dayKey(dTs);
+  return (plan && plan.asignaciones || []).find(a =>
+    a.camionId === camionId && a.fecha === dk && a.id !== exceptAssignId && a.faenaId &&
+    rangesOverlap(ini, fin, a.turnoInicio, a.turnoFin));
+}
+
+// Disponibilidad del conductor: no puede estar en dos lugares a la vez.
+// Choca si ese día tiene otra asignación cuyo horario se solapa.
+export function driverAvailability(conductorId, plan, dTs, exceptAssignId, ini, fin) {
   const dk = dayKey(dTs);
   const items = [];
   let ok = true;
   const clash = (plan && plan.asignaciones || []).find(a =>
-    a.conductorId === conductorId && a.fecha === dk && a.id !== exceptAssignId && a.faenaId);
-  if (clash) { items.push({ st: "bad", label: "Conductor ya asignado ese día a otro camión" }); ok = false; }
+    a.conductorId === conductorId && a.fecha === dk && a.id !== exceptAssignId && a.faenaId &&
+    rangesOverlap(ini, fin, a.turnoInicio, a.turnoFin));
+  if (clash) { items.push({ st: "bad", label: "Conductor con otro viaje en ese horario" }); ok = false; }
   else items.push({ st: "ok", label: "Conductor disponible" });
   return { ok, items };
 }
