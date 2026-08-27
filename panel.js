@@ -137,6 +137,7 @@ async function dashboard(view, ctx) {
     : "";
 
   const navBtns = ['<button class="btn btn-ghost" id="nav-camiones" style="flex:1;min-width:140px">' + I.truck + "Camiones</button>"];
+  if (can(p, "plan.view")) navBtns.push('<button class="btn btn-ghost" id="nav-plan" style="flex:1;min-width:140px">' + I.route + "Planificación</button>");
   if (can(p, "reports.view")) navBtns.push('<button class="btn btn-ghost" id="nav-reportes" style="flex:1;min-width:140px">' + I.chart + "Indicadores</button>");
   if (can(p, "product.manage")) navBtns.push('<button class="btn btn-ghost" id="nav-productos" style="flex:1;min-width:140px">' + I.route + "Productos</button>");
   if (can(p, "user.manage")) navBtns.push('<button class="btn btn-ghost" id="nav-usuarios" style="flex:1;min-width:140px">' + I.users + "Usuarios</button>");
@@ -186,6 +187,7 @@ async function dashboard(view, ctx) {
   const aa = $("#alr-all", view); if (aa) aa.onclick = () => ctx.go("alertas", {});
   const am = $("#alr-more", view); if (am) am.onclick = () => ctx.go("alertas", {});
   $("#nav-camiones", view).onclick = () => ctx.go("camiones", {});
+  const nplan = $("#nav-plan", view); if (nplan) nplan.onclick = () => ctx.go("planificacion", {});
   const nr = $("#nav-reportes", view); if (nr) nr.onclick = () => ctx.go("reportes", {});
   const npr = $("#nav-productos", view); if (npr) npr.onclick = () => ctx.go("productos", {});
   const nu = $("#nav-usuarios", view); if (nu) nu.onclick = () => ctx.go("usuarios", {});

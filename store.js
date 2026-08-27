@@ -48,7 +48,9 @@ function demoAdapter() {
       { uid: "u_admin", email: "admin@lacabana.cl",      nombre: "Rodrigo Briones", role: "administrador", activo: true, createdAt: now, _pw: "admin123" },
       { uid: "u_super", email: "supervisor@lacabana.cl", nombre: "Carlos Reyes",    role: "supervisor",    activo: true, createdAt: now, _pw: "super123" },
       { uid: "u_ger",   email: "gerente@lacabana.cl",    nombre: "Ana Torres",      role: "gerente",       activo: true, createdAt: now, _pw: "gerente123" },
-      { uid: "u_chofer",email: "conductor@lacabana.cl",  nombre: "José Muñoz",      role: "conductor",     activo: true, createdAt: now, _pw: "chofer123" }
+      { uid: "u_chofer",email: "conductor@lacabana.cl",  nombre: "José Muñoz",      role: "conductor",     activo: true, createdAt: now, _pw: "chofer123" },
+      { uid: "u_chofer2",email: "pedro@lacabana.cl",     nombre: "Pedro Salazar",   role: "conductor",     activo: true, createdAt: now, _pw: "chofer123" },
+      { uid: "u_chofer3",email: "luis@lacabana.cl",      nombre: "Luis Fuentes",    role: "conductor",     activo: true, createdAt: now, _pw: "chofer123" }
     ];
     const mkDocs = (pc, so, rt) => ({
       permisoCirculacion: { numero: pc.n, vence: pc.v },
@@ -90,7 +92,40 @@ function demoAdapter() {
     const products = PRODUCTS_BASE.map((p, i) => ({ id: "pr" + (i + 1), codigo: p.codigo, descripcion: p.descripcion, especie: p.especie, um: p.um }));
     const devices = [];
     const config = [{ id: "empresa", nombre: "Transportes La Cabaña", app: "Bitácora de Camiones", logo: "" }];
-    return { users, devices, trucks, checklists, bitacora, orders, fuel, trips, products, config };
+
+    // --- Planificación de flota (demo) ---
+    const faenas = [
+      { id: "fa1", nombre: "Faena A", ubicacion: "Fundo El Roble, Angol", tipoMadera: "Pino aserrable", destino: "Aserradero Mininco", distancia: 48, tiempoCiclo: 120, capacidadDia: 20, estadoAcceso: "operativa", restricciones: "", activa: true, createdAt: now },
+      { id: "fa2", nombre: "Faena B", ubicacion: "Predio Santa Ana, Collipulli", tipoMadera: "Eucalipto pulpable", destino: "Planta Collipulli", distancia: 62, tiempoCiclo: 150, capacidadDia: 16, estadoAcceso: "condicionada", restricciones: "Camino de tierra, intransitable con lluvia fuerte.", activa: true, createdAt: now }
+    ];
+    // Semana actual (lunes a domingo) con claves de día YYYY-MM-DD.
+    const monday = (() => { const d = new Date(now); d.setHours(0,0,0,0); d.setDate(d.getDate() - ((d.getDay()+6)%7)); return d.getTime(); })();
+    const dk = (off) => { const d = new Date(monday + off*D); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
+    const iso = (() => { const d = new Date(monday); d.setDate(d.getDate()+3-((d.getDay()+6)%7)); const w1 = new Date(d.getFullYear(),0,4); const num = 1+Math.round(((d-w1)/D-3+((w1.getDay()+6)%7))/7); return { num, year: d.getFullYear() }; })();
+    const asig = [];
+    const mkA = (id, off, camionId, conductorId, faenaId, viajes, vol) => asig.push({
+      id, fecha: dk(off), camionId, conductorId, faenaId,
+      turnoInicio: "07:00", turnoFin: "17:00", viajesObjetivo: viajes, volumenObjetivo: vol, estado: "planificado"
+    });
+    // Camión 01 (José): Faena A lun-mié, Faena B jue-vie
+    mkA("as1",0,"t1","u_chofer","fa1",5,100); mkA("as2",1,"t1","u_chofer","fa1",5,100); mkA("as3",2,"t1","u_chofer","fa1",5,100);
+    mkA("as4",3,"t1","u_chofer","fa2",4,80);  mkA("as5",4,"t1","u_chofer","fa2",4,80);
+    // Camión 02 (Pedro): Faena A lun-mié, Faena B jue-vie
+    mkA("as6",0,"t2","u_chofer2","fa1",5,100); mkA("as7",1,"t2","u_chofer2","fa1",5,100); mkA("as8",2,"t2","u_chofer2","fa1",5,100);
+    mkA("as9",3,"t2","u_chofer2","fa2",4,80);  mkA("as10",4,"t2","u_chofer2","fa2",4,80);
+    // Camión 03 (Luis): Faena B lun-mar, reserva mié, Faena A jue-vie
+    mkA("as11",0,"t3","u_chofer3","fa2",4,80); mkA("as12",1,"t3","u_chofer3","fa2",4,80);
+    mkA("as13",3,"t3","u_chofer3","fa1",5,100); mkA("as14",4,"t3","u_chofer3","fa1",5,100);
+    const plans = [{
+      id: iso.year + "-W" + String(iso.num).padStart(2,"0"),
+      semana: iso.num, anio: iso.year, inicio: monday, fin: monday + 6*D,
+      estado: "planificado", objetivoViajes: 66,
+      asignaciones: asig, original: JSON.parse(JSON.stringify(asig)), cambios: [],
+      createdBy: "u_super", createdAt: now, aprobadoAt: now
+    }];
+    const imprevistos = [];
+
+    return { users, devices, trucks, checklists, bitacora, orders, fuel, trips, products, config, faenas, plans, imprevistos };
   }
 
   let db = load();
@@ -349,5 +384,19 @@ export const store = {
   // --- fallas descartadas (con motivo; el reporte original nunca se edita) ---
   async listResolved() { return (await A.list("resolved")).map(r => r.id); },
   async listResolvedDocs() { return (await A.list("resolved")).sort((a, b) => (b.ts || 0) - (a.ts || 0)); },
-  async resolveFalla(id, data) { return A.set("resolved", id, Object.assign({ id, ts: Date.now() }, data || {})); }
+  async resolveFalla(id, data) { return A.set("resolved", id, Object.assign({ id, ts: Date.now() }, data || {})); },
+
+  // --- faenas (catálogo para planificación) ---
+  async listFaenas() { return (await A.list("faenas")).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || "")); },
+  async getFaena(id) { return A.get("faenas", id); },
+  async saveFaena(id, data) { if (id) { await A.set("faenas", id, data); return id; } return A.add("faenas", data); },
+
+  // --- planificación semanal ---
+  async listPlans() { return (await A.list("plans")).sort((a, b) => (b.inicio || 0) - (a.inicio || 0)); },
+  async getPlan(id) { return A.get("plans", id); },
+  async savePlan(id, data) { await A.set("plans", id, Object.assign({ id }, data)); return id; },
+
+  // --- imprevistos operacionales ---
+  async listImprevistos() { return (await A.list("imprevistos")).sort((a, b) => (b.ts || 0) - (a.ts || 0)); },
+  async addImprevisto(data) { return A.add("imprevistos", Object.assign({ ts: Date.now() }, data)); }
 };

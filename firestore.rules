@@ -111,5 +111,25 @@ service cloud.firestore {
       allow read: if hasRole(['supervisor','gerente','administrador']);
       allow write: if hasRole(['supervisor','administrador']);
     }
+
+    // Planificación de flota: catálogo de faenas
+    match /faenas/{id} {
+      allow read: if isActive();
+      allow create, update, delete: if hasRole(['supervisor','administrador']);
+    }
+
+    // Planificación de flota: programa semanal y asignaciones
+    match /plans/{id} {
+      allow read: if isActive();
+      allow create, update, delete: if hasRole(['supervisor','administrador']);
+    }
+
+    // Planificación de flota: imprevistos operacionales
+    match /imprevistos/{id} {
+      allow read: if isActive();
+      // El conductor puede reportar desde el móvil; supervisor/admin gestionan.
+      allow create: if isActive();
+      allow update, delete: if hasRole(['supervisor','administrador']);
+    }
   }
 }

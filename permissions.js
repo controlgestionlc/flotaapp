@@ -28,7 +28,9 @@ export const PERMISSIONS = {
   "order.manage":     "Crear y gestionar órdenes de taller y costos",
   "reports.view":     "Ver reportes, indicadores y costos",
   "data.import":      "Importar viajes históricos desde Excel",
-  "user.manage":      "Administrar usuarios y roles"
+  "user.manage":      "Administrar usuarios y roles",
+  "plan.view":        "Ver la planificación de flota",
+  "plan.manage":      "Crear y editar la planificación de flota"
 };
 
 // Asignación de permisos por rol. Editar aquí para ampliar.
@@ -39,16 +41,18 @@ const ROLE_PERMISSIONS = {
   ],
   supervisor: [
     "fleet.view", "falla.view", "truck.manage", "product.manage", "order.manage",
-    "reports.view", "fuel.create", "trip.create", "history.own"
+    "reports.view", "fuel.create", "trip.create", "history.own",
+    "plan.view", "plan.manage"
   ],
   gerente: [
-    "fleet.view", "falla.view", "reports.view"
+    "fleet.view", "falla.view", "reports.view", "plan.view"
   ],
   administrador: [
     "checklist.create", "bitacora.create", "fuel.create", "trip.create",
     "truck.select", "history.own",
     "fleet.view", "falla.view", "truck.manage", "product.manage", "order.manage",
-    "reports.view", "data.import", "user.manage"
+    "reports.view", "data.import", "user.manage",
+    "plan.view", "plan.manage"
   ]
 };
 

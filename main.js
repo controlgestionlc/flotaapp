@@ -16,6 +16,7 @@ import { renderProductos } from "./productos.js";
 import { renderImportar } from "./importar.js";
 import { renderMantencion } from "./mantencion.js";
 import { renderAlertas } from "./alertas.js";
+import { renderPlanificacion } from "./planificacion.js";
 
 const APP = document.getElementById("app");
 
@@ -113,6 +114,10 @@ async function routeTo(view) {
   if (r === "reportes") {
     if (!can(p, "reports.view")) { ctx.route = "home"; return renderPanel(view, ctx); }
     return renderReportes(view, ctx);
+  }
+  if (r === "planificacion" || r === "faenas" || r === "operacion" || r === "control") {
+    if (!can(p, "plan.view")) { ctx.route = "home"; return renderPanel(view, ctx); }
+    return renderPlanificacion(view, ctx);
   }
   return renderPanel(view, ctx);
 }

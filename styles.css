@@ -219,4 +219,30 @@ hr.sep{border:0;border-top:1px solid var(--line);margin:16px 0}
 .doc-row .dl .dn{font-weight:600;font-size:.92rem}
 .doc-row .dl .dm{color:var(--muted);font-size:.8rem;margin-top:2px}
 
+/* planificación de flota */
+.pl-weeknav{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.pl-weeklabel{text-align:center;line-height:1.2}
+.pl-weeklabel b{font-family:"Barlow Semi Condensed";font-size:1.05rem}
+.pl-weeklabel span{display:block;font-size:.78rem;color:var(--muted)}
+.trucknum.sm{width:36px;height:36px;font-size:.9rem;border-radius:9px}
+.pl-matrix-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+.pl-matrix{border-collapse:collapse;width:100%;min-width:560px;font-size:.82rem}
+.pl-matrix th,.pl-matrix td{padding:0;border-bottom:1px solid var(--line);border-right:1px solid var(--line)}
+.pl-matrix thead th{background:var(--surface-2);padding:8px 6px;text-align:center;font-family:"Barlow Semi Condensed";font-weight:600;color:var(--ink-2);position:sticky;top:0}
+.pl-matrix thead th span{display:block;font-size:.72rem;color:var(--muted);font-weight:400}
+.pl-matrix th.pl-today{color:var(--accent)}
+.pl-th-fix{position:sticky;left:0;z-index:1;background:var(--surface);padding:8px 10px !important;text-align:left;min-width:120px}
+.pl-matrix thead .pl-th-fix{background:var(--surface-2)}
+.pl-truck{display:flex;align-items:center;gap:8px}
+.pl-truck span b{display:block;font-size:.82rem}
+.pl-truck span small{font-size:.7rem}
+.pl-truck span small.ok{color:var(--ok)} .pl-truck span small.bad{color:var(--crit)}
+.pl-cell{width:100%;min-height:52px;border:0;background:transparent;cursor:pointer;display:flex;flex-direction:column;gap:2px;justify-content:center;align-items:flex-start;padding:8px 9px;color:var(--ink);text-align:left}
+.pl-cell b{font-family:"Barlow Semi Condensed";font-size:.86rem;line-height:1.05}
+.pl-cell .num{color:var(--muted);font-size:.76rem}
+.pl-cell.empty{color:var(--muted);font-size:.78rem;justify-content:center;align-items:center;font-style:italic}
+.pl-cell:hover{background:var(--surface-2)}
+.pl-matrix.ctrl td,.pl-matrix.ctrl th{text-align:center;padding:9px 8px}
+.pl-matrix.ctrl .pl-th-fix{text-align:left}
+
 @media (prefers-reduced-motion: reduce){*{animation-duration:.001ms !important}}
