@@ -123,7 +123,7 @@ async function semanal(view, ctx) {
   const objetivo = '<div class="card pad section" style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap">' +
     '<div><div class="meta-line">Objetivo semanal</div><div class="num" style="font-size:1.5rem;font-weight:700">' + (plan.objetivoViajes || viajesPlan) + ' viajes</div></div>' +
     '<div><div class="meta-line">Planificado</div><div class="num" style="font-size:1.5rem;font-weight:700">' + viajesPlan + ' viajes</div></div>' +
-    '<div><div class="meta-line">Capacidad</div><div class="num" style="font-size:1.5rem;font-weight:700">' + volPlan.toLocaleString("es-CL") + ' m³</div></div>' +
+    '<div><div class="meta-line">Metros (MR / M3)</div><div class="num" style="font-size:1.5rem;font-weight:700">' + volPlan.toLocaleString("es-CL") + "</div></div>" +
     (canEdit ? '<button class="btn sm btn-soft" id="pl-obj" style="align-self:center">Editar objetivo</button>' : "") + "</div>";
 
   const acciones = canEdit ? '<div class="section" style="display:flex;gap:10px;flex-wrap:wrap">' +
@@ -470,10 +470,10 @@ async function controlScreen(view, ctx) {
     '<div class="kpis section">' +
       kpi("a", totPlanV + " / " + totRealV, "Viajes plan/real", cumpl + "% cumplido") +
       kpi(totRealV - totPlanV < 0 ? "c" : "g", (totRealV - totPlanV > 0 ? "+" : "") + (totRealV - totPlanV), "Diferencia", "viajes") +
-      kpi("a", totPlanM.toLocaleString("es-CL"), "m³ planificados", "capacidad") +
-      kpi("a", totRealM.toLocaleString("es-CL"), "m³ reales", "ejecutado") +
+      kpi("a", totPlanM.toLocaleString("es-CL"), "Metros plan. (MR / M3)", "capacidad") +
+      kpi("a", totRealM.toLocaleString("es-CL"), "Metros reales (MR / M3)", "ejecutado") +
     "</div>" +
-    '<div class="pl-matrix-wrap section"><table class="pl-matrix ctrl"><thead><tr><th class="pl-th-fix">Camión</th><th>Plan v.</th><th>Real v.</th><th>Dif.</th><th>Plan m³</th><th>Real m³</th></tr></thead><tbody>' + rows + "</tbody></table></div>" +
+    '<div class="pl-matrix-wrap section"><table class="pl-matrix ctrl"><thead><tr><th class="pl-th-fix">Camión</th><th>Plan v.</th><th>Real v.</th><th>Dif.</th><th>Plan MR/M3</th><th>Real MR/M3</th></tr></thead><tbody>' + rows + "</tbody></table></div>" +
     (plan.cambios && plan.cambios.length ? '<div class="section"><span class="eyebrow">Cambios al programa (' + plan.cambios.length + ')</span><div class="card" style="margin-top:8px">' +
       plan.cambios.slice(0, 8).map(c => '<div class="row"><span class="sev-stripe sev-media"></span><div class="rl"><div class="t">' + esc(c.motivo) + '</div><div class="m"><span>' + esc(c.usuario || "") + "</span><span>" + fmtDateTime(c.ts) + "</span></div></div></div>").join("") + "</div></div>" : "") +
     '<p class="meta-line" style="font-size:.78rem;margin:14px 2px 4px">El plan responde “qué queremos hacer”; la bitácora “qué ocurrió realmente”. Aquí se comparan.</p>';
