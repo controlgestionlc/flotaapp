@@ -63,9 +63,24 @@ function confirmTruck(ctx, t) {
 }
 
 async function home(view, ctx, t) {
-  const [cks, trips] = await Promise.all([store.listChecklists(), store.listTrips()]);
+  const [cks, trips, plans, faenas] = await Promise.all([store.listChecklists(), store.listTrips(), store.listPlans(), store.listFaenas()]);
   const doneToday = cks.some(c => c.truckId === t.id && todayKey(c.ts) === todayKey());
   const abiertos = trips.filter(v => v.truckId === t.id && v.estado !== "cerrado");
+  // Planificación del día para este camión.
+  const dkHoy = dayKey(Date.now()), wkHoy = weekInfo(Date.now());
+  const planHoy = plans.find(p => p.id === wkHoy.key);
+  const asigsHoy = (planHoy && planHoy.asignaciones || [])
+    .filter(a => a.camionId === t.id && a.fecha === dkHoy && a.faenaId)
+    .sort((a, b) => (a.turnoInicio || "").localeCompare(b.turnoInicio || ""));
+  const faNombre = id => { const f = faenas.find(x => x.id === id); return f ? f.nombre : "Faena"; };
+  const faUnidad = id => { const f = faenas.find(x => x.id === id); return f ? (f.unidad || "") : ""; };
+  const planCard = asigsHoy.length
+    ? '<div class="card pad section"><span class="eyebrow" style="display:block;margin-bottom:8px">Tu planificación de hoy</span>' +
+      asigsHoy.map(a => '<div class="row" style="padding:8px 0"><span class="sev-stripe sev-baja" style="background:var(--accent)"></span><div class="rl">' +
+        '<div class="t">' + esc(faNombre(a.faenaId)) + ' <span class="pill neutral">' + (a.viajesObjetivo || 0) + " v.</span></div>" +
+        '<div class="m"><span>' + esc((a.turnoInicio || "--") + " ─ " + (a.turnoFin || "--")) + "</span>" +
+        (a.volumenObjetivo ? "<span>" + a.volumenObjetivo + " " + esc(faUnidad(a.faenaId)) + "</span>" : "") + "</div></div></div>").join("") + "</div>"
+    : '<div class="card pad section"><span class="eyebrow" style="display:block;margin-bottom:6px">Planificación de hoy</span><p class="meta-line" style="margin:0">Este camión no tiene faena asignada hoy. Consulta con tu supervisor.</p></div>';
   const ckAlert = !doneToday
     ? '<div class="banner" id="c-ck-alert" style="cursor:pointer;border-left-color:var(--warn);background:var(--warn-soft)">' + I.alert +
       "<div><b>Registra el checklist de inicio de turno.</b> Es el siguiente paso antes de operar el camión.</div></div>"
@@ -87,6 +102,7 @@ async function home(view, ctx, t) {
                  : '<span class="pill warn"><span class="dot"></span>Falta checklist de hoy</span>') +
       (abiertos.length ? '<span class="pill warn"><span class="dot"></span>' + abiertos.length + " viaje(s) abierto(s)</span>" : "") +
       "</div></div>" +
+    planCard +
     '<div class="tiles section">' +
       tile("c-checklist", I.check, doneToday ? "Repetir checklist" : "Checklist de inicio de turno", doneToday ? "Ya registraste uno hoy" : "Revisa el camión antes de salir") +
       tile("c-combustible", I.fuel, "Cargar combustible", "Litros, precio, kilómetros y estación") +

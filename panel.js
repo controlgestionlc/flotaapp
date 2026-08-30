@@ -2,6 +2,7 @@ import { store } from "./store.js";
 import { can } from "./permissions.js";
 import { DOC_TYPES } from "./checklist.js";
 import { maintenanceAlerts } from "./maintenance.js";
+import { weekInfo, dayKey } from "./planning.js";
 import {
   I, esc, fmtCLP, fmtDate, fmtDateTime, monthKey, dInput, docStatus,
   iconSpan, emptyBox, toast, openSheet, closeSheet, $, $$
@@ -245,13 +246,33 @@ function orderRow(o, trucks) {
 }
 
 // Ficha de disponibilidad al tocar un camión en el semáforo.
-function availSheet(ctx, truckId, trucks, orders, fallas) {
+async function availSheet(ctx, truckId, trucks, orders, fallas) {
   const t = trucks.find(x => x.id === truckId); if (!t) return;
   const a = availStatus(truckId, orders, fallas);
   let body = '<div class="stat-truck" style="margin-bottom:16px"><span class="trucknum">' + esc(t.num) + "</span>" +
     '<div style="flex:1"><div style="font-weight:700;font-family:Barlow Semi Condensed;font-size:1.15rem">' + esc(t.marca + " " + (t.modelo || "")) + "</div>" +
     '<div style="margin-top:4px"><span class="plate">' + esc(t.patente) + "</span></div></div>" +
     '<span class="pill ' + a.cls + '"><span class="dot"></span>' + a.label + "</span></div>";
+
+  // Planificación de hoy para este camión.
+  try {
+    const [plans, faenas, users] = await Promise.all([store.listPlans(), store.listFaenas(), store.listUsers()]);
+    const dk = dayKey(Date.now()), wk = weekInfo(Date.now());
+    const plan = plans.find(p => p.id === wk.key);
+    const asigs = (plan && plan.asignaciones || []).filter(x => x.camionId === truckId && x.fecha === dk && x.faenaId)
+      .sort((x, y) => (x.turnoInicio || "").localeCompare(y.turnoInicio || ""));
+    const faN = id => { const f = faenas.find(z => z.id === id); return f ? f.nombre : "Faena"; };
+    const coN = uid => { const u = users.find(z => z.uid === uid); return u ? u.nombre : ""; };
+    if (asigs.length) {
+      body += '<div class="card pad" style="box-shadow:none;border-color:var(--line);margin-bottom:14px"><span class="eyebrow" style="display:block;margin-bottom:8px">Planificación de hoy</span>' +
+        asigs.map(x => '<div class="row" style="padding:7px 0"><span class="sev-stripe sev-baja" style="background:var(--accent)"></span><div class="rl">' +
+          '<div class="t">' + esc(faN(x.faenaId)) + ' <span class="pill neutral">' + (x.viajesObjetivo || 0) + " v.</span></div>" +
+          '<div class="m"><span>' + esc((x.turnoInicio || "--") + " ─ " + (x.turnoFin || "--")) + "</span>" +
+          (x.conductorId ? "<span>" + esc(coN(x.conductorId)) + "</span>" : "") + (x.volumenObjetivo ? "<span>" + x.volumenObjetivo + "</span>" : "") + "</div></div></div>").join("") + "</div>";
+    } else {
+      body += '<div class="meta-line" style="margin:-6px 0 14px;font-size:.82rem">Sin faena asignada hoy en la planificación.</div>';
+    }
+  } catch (e) { /* la planificación es complementaria */ }
 
   if (a.k === "operativo") {
     body += '<p class="meta-line">Operativo, sin novedades pendientes. Disponible para operar.</p>';
