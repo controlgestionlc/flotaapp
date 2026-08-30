@@ -3,6 +3,7 @@ import { can } from "./permissions.js";
 import { DOC_TYPES } from "./checklist.js";
 import { maintenanceAlerts } from "./maintenance.js";
 import { weekInfo, dayKey } from "./planning.js";
+import { openTruckWeek } from "./truckweek.js";
 import {
   I, esc, fmtCLP, fmtDate, fmtDateTime, monthKey, dInput, docStatus,
   iconSpan, emptyBox, toast, openSheet, closeSheet, $, $$
@@ -264,14 +265,15 @@ async function availSheet(ctx, truckId, trucks, orders, fallas) {
     const faN = id => { const f = faenas.find(z => z.id === id); return f ? f.nombre : "Faena"; };
     const coN = uid => { const u = users.find(z => z.uid === uid); return u ? u.nombre : ""; };
     if (asigs.length) {
-      body += '<div class="card pad" style="box-shadow:none;border-color:var(--line);margin-bottom:14px"><span class="eyebrow" style="display:block;margin-bottom:8px">Planificación de hoy</span>' +
+      body += '<div class="card pad" style="box-shadow:none;border-color:var(--line);margin-bottom:10px"><span class="eyebrow" style="display:block;margin-bottom:8px">Planificación de hoy</span>' +
         asigs.map(x => '<div class="row" style="padding:7px 0"><span class="sev-stripe sev-baja" style="background:var(--accent)"></span><div class="rl">' +
           '<div class="t">' + esc(faN(x.faenaId)) + ' <span class="pill neutral">' + (x.viajesObjetivo || 0) + " v.</span></div>" +
           '<div class="m"><span>' + esc((x.turnoInicio || "--") + " ─ " + (x.turnoFin || "--")) + "</span>" +
           (x.conductorId ? "<span>" + esc(coN(x.conductorId)) + "</span>" : "") + (x.volumenObjetivo ? "<span>" + x.volumenObjetivo + "</span>" : "") + "</div></div></div>").join("") + "</div>";
     } else {
-      body += '<div class="meta-line" style="margin:-6px 0 14px;font-size:.82rem">Sin faena asignada hoy en la planificación.</div>';
+      body += '<div class="meta-line" style="margin:-6px 0 10px;font-size:.82rem">Sin faena asignada hoy en la planificación.</div>';
     }
+    body += '<button class="btn sm btn-soft" style="margin-bottom:14px" id="av-week">' + I.route + "Ver semana completa</button>";
   } catch (e) { /* la planificación es complementaria */ }
 
   if (a.k === "operativo") {
@@ -304,6 +306,7 @@ async function availSheet(ctx, truckId, trucks, orders, fallas) {
   openSheet("Disponibilidad · " + t.num, body, () => {
     const bo = $("#av-order"); if (bo) bo.onclick = () => { closeSheet(); orderDraft = null; ctx.go("order", { id: a.order.id }); };
     const bc = $("#av-crear"); if (bc) bc.onclick = () => { const fs = fallas.filter(f => f.truckId === truckId); closeSheet(); createOrder(ctx, fs[0].id, fallas); };
+    const bw = $("#av-week"); if (bw) bw.onclick = () => { closeSheet(); openTruckWeek(ctx, truckId, Date.now()); };
     const br = $("#av-resumen"); if (br) br.onclick = () => { closeSheet(); ctx.go("resumen", { id: truckId, from: "home" }); };
   });
 }

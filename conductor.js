@@ -1,6 +1,7 @@
 import { store } from "./store.js";
 import { CK_ITEMS } from "./checklist.js";
 import { weekInfo, dayKey, toMin } from "./planning.js";
+import { openTruckWeek } from "./truckweek.js";
 import {
   I, esc, uid, fmtCLP, fmtDate, fmtDateTime, todayKey, dInput, iconSpan, emptyBox,
   toast, captureGPS, gpsText, openSheet, closeSheet, $, $$
@@ -79,8 +80,9 @@ async function home(view, ctx, t) {
       asigsHoy.map(a => '<div class="row" style="padding:8px 0"><span class="sev-stripe sev-baja" style="background:var(--accent)"></span><div class="rl">' +
         '<div class="t">' + esc(faNombre(a.faenaId)) + ' <span class="pill neutral">' + (a.viajesObjetivo || 0) + " v.</span></div>" +
         '<div class="m"><span>' + esc((a.turnoInicio || "--") + " ─ " + (a.turnoFin || "--")) + "</span>" +
-        (a.volumenObjetivo ? "<span>" + a.volumenObjetivo + " " + esc(faUnidad(a.faenaId)) + "</span>" : "") + "</div></div></div>").join("") + "</div>"
-    : '<div class="card pad section"><span class="eyebrow" style="display:block;margin-bottom:6px">Planificación de hoy</span><p class="meta-line" style="margin:0">Este camión no tiene faena asignada hoy. Consulta con tu supervisor.</p></div>';
+        (a.volumenObjetivo ? "<span>" + a.volumenObjetivo + " " + esc(faUnidad(a.faenaId)) + "</span>" : "") + "</div></div></div>").join("") +
+      '<button class="btn sm btn-soft" id="c-week" style="margin-top:10px">' + I.route + "Ver mi semana</button></div>"
+    : '<div class="card pad section"><span class="eyebrow" style="display:block;margin-bottom:6px">Planificación de hoy</span><p class="meta-line" style="margin:0 0 10px">Este camión no tiene faena asignada hoy. Consulta con tu supervisor.</p><button class="btn sm btn-soft" id="c-week">' + I.route + "Ver mi semana</button></div>";
   const ckAlert = !doneToday
     ? '<div class="banner" id="c-ck-alert" style="cursor:pointer;border-left-color:var(--warn);background:var(--warn-soft)">' + I.alert +
       "<div><b>Registra el checklist de inicio de turno.</b> Es el siguiente paso antes de operar el camión.</div></div>"
@@ -120,6 +122,7 @@ async function home(view, ctx, t) {
   $("#c-bitacora", view).onclick = () => ctx.go("home", { screen: "bitacora" });
   $("#c-historial", view).onclick = () => ctx.go("home", { screen: "historial" });
   $("#c-changetruck", view).onclick = () => { ctx.setTruck(null); ctx.go("home", { screen: "home" }); };
+  const cw = $("#c-week", view); if (cw) cw.onclick = () => openTruckWeek(ctx, t.id, Date.now());
 
   // Justo después de confirmar el camión, indicar que debe registrar el checklist.
   if (ctx.params.justPicked && !doneToday) {

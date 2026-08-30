@@ -223,6 +223,16 @@ hr.sep{border:0;border-top:1px solid var(--line);margin:16px 0}
 
 .c-topbar{display:flex;justify-content:flex-start;margin:2px 0 12px}
 
+/* semana de un camión */
+.tw-nav{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+.tw-lbl{text-align:center;line-height:1.15}
+.tw-lbl b{font-family:"Barlow Semi Condensed";font-size:1rem}
+.tw-lbl span{display:block;font-size:.74rem;color:var(--muted)}
+.tw-day{padding:8px 2px 2px;border-top:1px solid var(--line)}
+.tw-day:first-child{border-top:0}
+.tw-day .tw-dl{font-family:"Barlow Semi Condensed";font-weight:600;font-size:.86rem;color:var(--ink-2);text-transform:uppercase;letter-spacing:.03em}
+.tw-day.hoy .tw-dl{color:var(--accent)}
+
 /* tira de clima semanal */
 .clima-week{display:flex;gap:6px;overflow-x:auto;padding:4px 0}
 .cw-day{flex:1;min-width:44px;display:flex;flex-direction:column;align-items:center;gap:3px;background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:7px 4px}
