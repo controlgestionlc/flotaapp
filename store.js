@@ -95,8 +95,8 @@ function demoAdapter() {
 
     // --- Planificación de flota (demo) ---
     const faenas = [
-      { id: "fa1", nombre: "Faena A", ubicacion: "Fundo El Roble", comuna: "Angol", lat: -37.7955, lng: -72.7025, tipoMadera: "Pino aserrable", destino: "Aserradero Mininco", distancia: 48, tiempoCiclo: 120, capacidadDia: 20, objetivoDia: 10, estadoAcceso: "operativa", restricciones: "", activa: true, createdAt: now },
-      { id: "fa2", nombre: "Faena B", ubicacion: "Predio Santa Ana", comuna: "Collipulli", lat: -37.9558, lng: -72.4344, tipoMadera: "Eucalipto pulpable", destino: "Planta Collipulli", distancia: 62, tiempoCiclo: 150, capacidadDia: 16, objetivoDia: 5, estadoAcceso: "condicionada", restricciones: "Camino de tierra, intransitable con lluvia fuerte.", activa: true, createdAt: now }
+      { id: "fa1", nombre: "Faena A", ubicacion: "Fundo El Roble", comuna: "Angol", lat: -37.7955, lng: -72.7025, tipoMadera: "Pino aserrable", unidad: "M3", destino: "Aserradero Mininco", distancia: 48, tiempoCiclo: 120, capacidadDia: 20, objetivoDia: 10, estadoAcceso: "operativa", restricciones: "", activa: true, createdAt: now },
+      { id: "fa2", nombre: "Faena B", ubicacion: "Predio Santa Ana", comuna: "Collipulli", lat: -37.9558, lng: -72.4344, tipoMadera: "Eucalipto pulpable", unidad: "MR", destino: "Planta Collipulli", distancia: 62, tiempoCiclo: 150, capacidadDia: 16, objetivoDia: 5, estadoAcceso: "condicionada", restricciones: "Camino de tierra, intransitable con lluvia fuerte.", activa: true, createdAt: now }
     ];
     // Semana actual (lunes a domingo) con claves de día YYYY-MM-DD.
     const monday = (() => { const d = new Date(now); d.setHours(0,0,0,0); d.setDate(d.getDate() - ((d.getDay()+6)%7)); return d.getTime(); })();

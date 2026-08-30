@@ -665,7 +665,7 @@ async function autoScreen(view, ctx) {
   // Estado de opciones (persistente entre generar/aprobar).
   if (!autoState || autoState.week !== wk.key) {
     autoState = { week: wk.key, criterio: params.criterio, reservaMin: params.reservaMin, jornadaMin: params.jornadaMin,
-      dias: wk.dias.slice(0, 5).map(dayKey), proposal: null };
+      capMR: params.capMR, capM3: params.capM3, dias: wk.dias.slice(0, 5).map(dayKey), proposal: null };
   }
   const st = autoState;
 
@@ -679,9 +679,9 @@ async function autoScreen(view, ctx) {
     const faName2 = id => { const f = faenas.find(x => x.id === id); return f ? f.nombre : "—"; };
     const truckNum = id => { const t = trucks.find(x => x.id === id); return t ? t.num : "?"; };
     const resumen = pr.resumen.map(r => '<div class="row"><span class="sev-stripe ' + (r.cumpl >= 100 ? "sev-baja" : "sev-media") + '"></span><div class="rl"><div class="t">' + esc(r.nombre) +
-      ' <span class="pill ' + (r.cumpl >= 100 ? "ok" : "warn") + '">' + r.cumpl + "%</span></div><div class='m'><span>" + r.trucks + " camión(es)</span><span>" + r.viajes + " / " + r.objetivo + " viajes</span></div></div></div>").join("");
+      ' <span class="pill ' + (r.cumpl >= 100 ? "ok" : "warn") + '">' + r.cumpl + "%</span></div><div class='m'><span>" + r.trucks + " camión(es)</span><span>" + r.viajes + " / " + r.objetivo + " viajes</span><span>" + (r.volumen || 0) + " " + esc(r.unidad || "M3") + "</span></div></div></div>").join("");
     const detalle = pr.proposal.map(p => '<div class="row"><span class="trucknum sm">' + esc(truckNum(p.camionId)) + '</span><div class="rl"><div class="t">' + esc(faName2(p.faenaId)) +
-      ' <span class="pill neutral">' + p.viajes + ' v.</span></div><div class="m"><span>' + esc(p.conductorId ? (conductores.find(c => c.uid === p.conductorId) || {}).nombre || "" : "Sin conductor") + "</span></div></div></div>").join("");
+      ' <span class="pill neutral">' + p.viajes + " v. · " + (p.volumen || 0) + " " + esc(p.unidad || "M3") + '</span></div><div class="m"><span>' + esc(p.conductorId ? (conductores.find(c => c.uid === p.conductorId) || {}).nombre || "" : "Sin conductor") + "</span></div></div></div>").join("");
     const reservaTxt = pr.reserva.length ? pr.reserva.map(truckNum).join(", ") : "Ninguno";
     const warns = pr.warnings.length ? '<div class="card pad section" style="border-color:var(--warn)"><span class="eyebrow" style="display:block;margin-bottom:6px">Advertencias</span>' +
       pr.warnings.map(w => '<div style="display:flex;gap:8px;padding:2px 0;font-size:.86rem">⚠️ <span>' + esc(w) + "</span></div>").join("") + "</div>" : "";
@@ -701,6 +701,8 @@ async function autoScreen(view, ctx) {
     '<div class="section"><span class="eyebrow">Tipo de planificación</span><div class="tiles" style="margin-top:8px">' + critOpts + "</div></div>" +
     '<div class="card pad section"><div class="grid2"><label class="fld" style="margin:0"><span class="lb">Camiones de reserva</span><input class="input num" id="au-reserva" inputmode="numeric" value="' + esc(st.reservaMin) + '"></label>' +
       '<label class="fld" style="margin:0"><span class="lb">Jornada (horas)</span><input class="input num" id="au-jornada" inputmode="decimal" value="' + esc(Math.round(st.jornadaMin / 60 * 10) / 10) + '"></label></div>' +
+      '<div class="grid2" style="margin-top:12px"><label class="fld" style="margin:0"><span class="lb">Capacidad por viaje · M3</span><input class="input num" id="au-capm3" inputmode="numeric" value="' + esc(st.capM3) + '"></label>' +
+      '<label class="fld" style="margin:0"><span class="lb">Capacidad por viaje · MR</span><input class="input num" id="au-capmr" inputmode="numeric" value="' + esc(st.capMR) + '"></label></div>' +
       '<label class="fld" style="margin:14px 0 0"><span class="lb">Días a programar</span><div class="chips" id="au-dias">' + diaChips + "</div></label></div>" +
     '<div class="section"><button class="btn btn-steel" id="au-gen" style="width:100%">' + I.route + "Generar propuesta</button></div>" +
     proposalBlock;
@@ -710,14 +712,16 @@ async function autoScreen(view, ctx) {
   $$("[data-dia]", view).forEach(b => b.onclick = () => { const dk = b.getAttribute("data-dia"); const i = st.dias.indexOf(dk); if (i >= 0) st.dias.splice(i, 1); else st.dias.push(dk); autoScreen(view, ctx); });
   const rv = $("#au-reserva", view); if (rv) rv.oninput = () => { st.reservaMin = Math.max(0, Number(rv.value) || 0); };
   const jr = $("#au-jornada", view); if (jr) jr.oninput = () => { st.jornadaMin = Math.max(60, Math.round((Number(jr.value) || 10) * 60)); };
+  const cm3 = $("#au-capm3", view); if (cm3) cm3.oninput = () => { st.capM3 = Math.max(1, Number(cm3.value) || 20); };
+  const cmr = $("#au-capmr", view); if (cmr) cmr.oninput = () => { st.capMR = Math.max(1, Number(cmr.value) || 18); };
 
   $("#au-gen", view).onclick = async () => {
     if (!st.dias.length) { toast("Elige al menos un día", "err"); return; }
     // Guarda los parámetros para la próxima vez.
-    try { await store.savePlanConfig("auto", { criterio: st.criterio, reservaMin: st.reservaMin, jornadaMin: st.jornadaMin }); } catch (e) {}
+    try { await store.savePlanConfig("auto", { criterio: st.criterio, reservaMin: st.reservaMin, jornadaMin: st.jornadaMin, capMR: st.capMR, capM3: st.capM3 }); } catch (e) {}
     const truckInputs = activos.map(t => ({ id: t.id, num: t.num, available: truckAvailability(t, refs, weekTs).ok }));
-    const faenaInputs = activas.map(f => ({ id: f.id, nombre: f.nombre, objetivoDia: Number(f.objetivoDia) || 0, tiempoCiclo: Number(f.tiempoCiclo) || 0, accesoK: faenaAccess(f).k }));
-    const res = autoAssign(truckInputs, faenaInputs, { jornadaMin: st.jornadaMin, reservaMin: st.reservaMin, criterio: st.criterio });
+    const faenaInputs = activas.map(f => ({ id: f.id, nombre: f.nombre, objetivoDia: Number(f.objetivoDia) || 0, tiempoCiclo: Number(f.tiempoCiclo) || 0, unidad: f.unidad || "M3", accesoK: faenaAccess(f).k }));
+    const res = autoAssign(truckInputs, faenaInputs, { jornadaMin: st.jornadaMin, reservaMin: st.reservaMin, criterio: st.criterio, capMR: st.capMR, capM3: st.capM3 });
     // Asigna conductores distintos (round-robin sin repetir el mismo día).
     res.proposal.forEach((p, i) => { p.conductorId = conductores[i] ? conductores[i].uid : ""; });
     if (res.proposal.some(p => !p.conductorId)) res.warnings.push("Faltan conductores para todos los camiones.");
@@ -736,7 +740,7 @@ async function autoScreen(view, ctx) {
     st.dias.forEach(dk => {
       pr.proposal.forEach(p => {
         plan.asignaciones.push({ id: uid("as"), camionId: p.camionId, fecha: dk, conductorId: p.conductorId || "",
-          faenaId: p.faenaId, turnoInicio: ini, turnoFin: fin, viajesObjetivo: p.viajes, volumenObjetivo: 0,
+          faenaId: p.faenaId, turnoInicio: ini, turnoFin: fin, viajesObjetivo: p.viajes, volumenObjetivo: p.volumen || 0,
           estado: "planificado", auto: true });
       });
     });
@@ -777,7 +781,7 @@ async function faenaForm(view, ctx, id) {
   const f = id ? (await store.getFaena(id)) || {} : {};
   const d = {
     nombre: f.nombre || "", ubicacion: f.ubicacion || "", comuna: f.comuna || "", lat: f.lat != null ? f.lat : "", lng: f.lng != null ? f.lng : "",
-    tipoMadera: f.tipoMadera || "", destino: f.destino || "",
+    tipoMadera: f.tipoMadera || "", unidad: f.unidad || "M3", destino: f.destino || "",
     distancia: f.distancia || "", tiempoCiclo: f.tiempoCiclo || "", capacidadDia: f.capacidadDia || "", objetivoDia: f.objetivoDia || "",
     estadoAcceso: f.estadoAcceso || "operativa", restricciones: f.restricciones || "", activa: f.activa !== false
   };
@@ -799,7 +803,8 @@ async function faenaForm(view, ctx, id) {
       '<div class="grid2"><label class="fld"><span class="lb">Distancia (km)</span><input class="input num" id="ff-dist" inputmode="numeric" value="' + esc(d.distancia) + '"></label>' +
       '<label class="fld"><span class="lb">Tiempo ciclo (min)</span><input class="input num" id="ff-ciclo" inputmode="numeric" value="' + esc(d.tiempoCiclo) + '"></label></div>' +
       '<div class="grid2"><label class="fld"><span class="lb">Objetivo diario (viajes)</span><input class="input num" id="ff-obj" inputmode="numeric" value="' + esc(d.objetivoDia) + '"></label>' +
-      '<label class="fld"><span class="lb">Capacidad (viajes/día)</span><input class="input num" id="ff-cap" inputmode="numeric" value="' + esc(d.capacidadDia) + '"></label></div>' +
+      '<label class="fld"><span class="lb">Unidad de carga</span><select class="input" id="ff-unidad"><option value="M3"' + (d.unidad === "M3" ? " selected" : "") + '>M3 (20 por viaje)</option><option value="MR"' + (d.unidad === "MR" ? " selected" : "") + ">MR (18 por viaje)</option></select></label></div>" +
+      '<label class="fld"><span class="lb">Capacidad (viajes/día)</span><input class="input num" id="ff-cap" inputmode="numeric" value="' + esc(d.capacidadDia) + '"></label>' +
       '<label class="fld"><span class="lb">Estado de acceso</span><div class="chips" id="ff-acc">' + accChip("operativa", "Operativa") + accChip("condicionada", "Condicionada") + accChip("cerrada", "Cerrada") + "</div></label>" +
       '<label class="fld" style="margin-bottom:0"><span class="lb">Restricciones / observación</span><textarea class="input" id="ff-restr" placeholder="Ej: camino de tierra, intransitable con lluvia">' + esc(d.restricciones) + "</textarea></label>" +
     "</div>" +
@@ -833,7 +838,7 @@ async function faenaForm(view, ctx, id) {
     const rec = {
       nombre: g("#ff-nombre").trim(), ubicacion: g("#ff-ubi").trim(), comuna: g("#ff-comuna").trim(),
       lat: parseCoord(g("#ff-lat")), lng: parseCoord(g("#ff-lng")),
-      tipoMadera: g("#ff-mad").trim(), destino: g("#ff-dest").trim(),
+      tipoMadera: g("#ff-mad").trim(), unidad: g("#ff-unidad") || "M3", destino: g("#ff-dest").trim(),
       distancia: Number(g("#ff-dist")) || 0, tiempoCiclo: Number(g("#ff-ciclo")) || 0, capacidadDia: Number(g("#ff-cap")) || 0, objetivoDia: Number(g("#ff-obj")) || 0,
       estadoAcceso: d.estadoAcceso, restricciones: g("#ff-restr").trim(), activa: true,
       clima: f.clima || null, createdAt: f.createdAt || Date.now()

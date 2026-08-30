@@ -185,7 +185,13 @@ export function evaluarAccesoClima(reading, params) {
 //  Motor de asignación automática (configurable)
 // ---------------------------------------------------------------
 
-export const AUTO_PARAMS_DEFAULT = { jornadaMin: 600, reservaMin: 1, criterio: "recomendada" };
+export const AUTO_PARAMS_DEFAULT = { jornadaMin: 600, reservaMin: 1, criterio: "recomendada", capMR: 18, capM3: 20 };
+
+// Capacidad de carga de un camión por viaje según la unidad de la faena.
+export function capacidadViaje(unidad, params) {
+  const p = Object.assign({}, AUTO_PARAMS_DEFAULT, params || {});
+  return String(unidad).toUpperCase() === "MR" ? (Number(p.capMR) || 18) : (Number(p.capM3) || 20);
+}
 
 export const CRITERIOS = [
   { k: "recomendada", n: "Planificación recomendada", d: "Equilibra objetivos, reserva y accesibilidad." },
@@ -241,17 +247,19 @@ export function autoAssign(trucks, faenas, opts) {
   }
 
   // Construir propuesta y repartir viajes entre los camiones de cada faena.
+  // Cada viaje transporta la capacidad del camión (18 MR / 20 M3 según la faena).
   let ti = 0; const proposal = []; const resumen = [];
   for (const f of order) {
     const tpt = tripsPerTruck(o.jornadaMin, f.tiempoCiclo);
+    const cap = capacidadViaje(f.unidad, o);
     const k = alloc[f.id]; let obj = f.objetivoDia; let vsum = 0;
     for (let i = 0; i < k && ti < avail.length; i++) {
       const truck = avail[ti++];
       const share = Math.max(0, Math.min(tpt, Math.ceil(obj / (k - i))));
       obj -= share; vsum += share;
-      proposal.push({ camionId: truck.id, faenaId: f.id, viajes: share });
+      proposal.push({ camionId: truck.id, faenaId: f.id, viajes: share, volumen: share * cap, unidad: f.unidad || "M3", capViaje: cap });
     }
-    resumen.push({ faenaId: f.id, nombre: f.nombre, trucks: k, viajes: vsum, objetivo: f.objetivoDia, cumpl: f.objetivoDia ? Math.round(vsum / f.objetivoDia * 100) : 0, accesoK: f.accesoK });
+    resumen.push({ faenaId: f.id, nombre: f.nombre, trucks: k, viajes: vsum, volumen: vsum * cap, unidad: f.unidad || "M3", capViaje: cap, objetivo: f.objetivoDia, cumpl: f.objetivoDia ? Math.round(vsum / f.objetivoDia * 100) : 0, accesoK: f.accesoK });
   }
   const reserva = avail.slice(ti).map(t => t.id);
 
