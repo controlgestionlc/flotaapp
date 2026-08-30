@@ -33,6 +33,22 @@ export async function fetchFaenaClima(f) {
   };
 }
 
+// Geocodificación por nombre de lugar (comuna/localidad) vía Open-Meteo.
+// Devuelve { lat, lng, nombre } o null si no hay resultados.
+export async function geocode(nombre) {
+  const q = String(nombre || "").trim();
+  if (!q) throw new Error("Indica una comuna o localidad");
+  const url = "https://geocoding-api.open-meteo.com/v1/search?name=" + encodeURIComponent(q) + "&count=5&language=es&format=json";
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Servicio de búsqueda no disponible (" + res.status + ")");
+  const j = await res.json();
+  const rs = (j && j.results) || [];
+  if (!rs.length) return null;
+  // Prefiere un resultado en Chile si existe.
+  const cl = rs.find(r => r.country_code === "CL") || rs[0];
+  return { lat: cl.latitude, lng: cl.longitude, nombre: [cl.name, cl.admin1, cl.country].filter(Boolean).join(", ") };
+}
+
 // Consulta varias faenas; devuelve { id: {ok, reading|error} }.
 export async function fetchClimaFaenas(faenas) {
   const out = {};

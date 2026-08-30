@@ -391,6 +391,7 @@ export const store = {
   async getFaena(id) { return A.get("faenas", id); },
   async saveFaena(id, data) { if (id) { await A.set("faenas", id, data); return id; } return A.add("faenas", data); },
   async saveFaenaClima(id, clima) { return A.update("faenas", id, { clima }); },
+  async patchFaena(id, patch) { return A.update("faenas", id, patch); },
 
   // --- parámetros de planificación (clima, reserva, etc.) ---
   async getPlanConfig(id) { try { return await A.get("planconfig", id); } catch (e) { return null; } },

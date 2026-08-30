@@ -2,7 +2,7 @@ import { store } from "./store.js";
 import { can } from "./permissions.js";
 import {
   I, esc, uid, fmtDate, fmtDateTime, fmtCLP, iconSpan, emptyBox,
-  toast, openSheet, closeSheet, $, $$
+  toast, openSheet, closeSheet, captureGPS, $, $$
 } from "./ui.js";
 import {
   DIAS, DIAS_LARGO, weekInfo, dayKey, truckAvailability, driverAvailability,
@@ -10,7 +10,7 @@ import {
   evaluarAccesoClima, CLIMA_PARAMS_DEFAULT, wmoDesc,
   autoAssign, CRITERIOS, AUTO_PARAMS_DEFAULT, tripsPerTruck
 } from "./planning.js";
-import { fetchClimaFaenas, hasCoords } from "./clima.js";
+import { fetchClimaFaenas, hasCoords, geocode } from "./clima.js";
 
 // Timestamp dentro de la semana visualizada (se ajusta con la navegación).
 let weekTs = null;
@@ -556,12 +556,13 @@ async function climaScreen(view, ctx) {
     const motivos = sug.motivos.length ? '<div class="meta-line" style="font-size:.78rem;margin-top:4px">' + esc(sug.motivos.join(" · ")) + "</div>" : "";
     const sugEstado = sug.k === "normal" ? "operativa" : sug.k;
     const aplicar = (canEdit && r && sugEstado !== ac.k) ? '<button class="btn sm btn-soft" data-aplicar="' + f.id + "|" + sug.k + '" style="margin-top:10px">Aplicar “' + esc(sug.label) + '” a la faena</button>' : "";
+    const fixCoord = (canEdit && !hasCoords(f)) ? '<button class="btn sm btn-soft" data-coord="' + f.id + '" style="margin-top:10px">' + I.pin + "Cargar coordenadas</button>" : "";
     return '<div class="card pad section"><div class="subhead" style="margin:0"><h2 style="font-size:1.05rem">' + esc(f.nombre) + "</h2>" +
       '<span class="pill ' + ac.cls + '"><span class="dot"></span>' + ac.label + "</span></div>" +
       '<div class="meta-line" style="font-size:.8rem">' + esc([f.ubicacion, f.comuna].filter(Boolean).join(", ")) + (hasCoords(f) ? "" : " · sin coordenadas") + "</div>" +
       body +
       '<div style="display:flex;align-items:center;gap:8px;margin-top:8px"><span class="meta-line" style="font-size:.78rem">Acceso estimado por clima:</span><span class="pill ' + sug.cls + '"><span class="dot"></span>' + sug.label + "</span></div>" +
-      motivos + aplicar + "</div>";
+      motivos + aplicar + fixCoord + "</div>";
   }).join("") : '<div class="card pad section">' + emptyBox("No hay faenas registradas") + "</div>";
 
   view.innerHTML =
@@ -578,14 +579,27 @@ async function climaScreen(view, ctx) {
   up.onclick = async () => {
     up.disabled = true; up.textContent = "Consultando...";
     try {
-      const res = await fetchClimaFaenas(activas);
-      let okN = 0, failN = 0;
+      // 1) Faenas sin coordenadas: intenta obtenerlas por su comuna/ubicación.
+      let geocoded = 0;
       for (const f of activas) {
-        const r = res[f.id];
-        if (r && r.ok) { await store.saveFaenaClima(f.id, r.reading); okN++; }
-        else if (hasCoords(f)) failN++;
+        if (hasCoords(f)) continue;
+        const q = (f.comuna || "").trim() || (f.ubicacion || "").trim();
+        if (!q) continue;
+        try { const r = await geocode(q); if (r) { f.lat = r.lat; f.lng = r.lng; await store.patchFaena(f.id, { lat: r.lat, lng: r.lng }); geocoded++; } } catch (e) {}
       }
-      toast(okN ? "Clima actualizado (" + okN + " faena" + (okN > 1 ? "s" : "") + ")" : "No se pudo actualizar el clima", okN ? "ok" : "err");
+      const conCoords = activas.filter(hasCoords);
+      if (!conCoords.length) {
+        toast("No se pudieron obtener coordenadas. Revisa la comuna o cárgalas a mano en Faenas.", "err");
+        up.disabled = false; up.textContent = "Actualizar clima"; return;
+      }
+      // 2) Consulta el clima de las faenas con coordenadas.
+      const res = await fetchClimaFaenas(conCoords);
+      let okN = 0;
+      for (const f of conCoords) { const r = res[f.id]; if (r && r.ok) { await store.saveFaenaClima(f.id, r.reading); okN++; } }
+      const sinCoord = activas.length - conCoords.length;
+      const extra = sinCoord ? " · " + sinCoord + " sin ubicar" : "";
+      toast(okN ? "Clima actualizado (" + okN + " faena" + (okN > 1 ? "s" : "") + ")" + extra
+                : "No se pudo consultar el clima. Revisa la conexión.", okN ? "ok" : "err");
       climaScreen(view, ctx);
     } catch (e) { toast("No se pudo actualizar: " + (e.message || e), "err"); up.disabled = false; up.textContent = "Actualizar clima"; }
   };
@@ -594,6 +608,7 @@ async function climaScreen(view, ctx) {
     const [fid, k] = b.getAttribute("data-aplicar").split("|");
     aplicarAcceso(view, ctx, fid, k);
   });
+  $$("[data-coord]", view).forEach(b => b.onclick = () => ctx.go("faenas", { faenaId: b.getAttribute("data-coord") }));
 }
 
 function climaParams(view, ctx, params) {
@@ -774,9 +789,11 @@ async function faenaForm(view, ctx, id) {
       '<label class="fld"><span class="lb">Nombre</span><input class="input" id="ff-nombre" value="' + esc(d.nombre) + '"></label>' +
       '<div class="grid2"><label class="fld"><span class="lb">Ubicación</span><input class="input" id="ff-ubi" value="' + esc(d.ubicacion) + '"></label>' +
       '<label class="fld"><span class="lb">Comuna</span><input class="input" id="ff-comuna" value="' + esc(d.comuna) + '"></label></div>' +
-      '<div class="grid2"><label class="fld"><span class="lb">Latitud</span><input class="input num" id="ff-lat" inputmode="decimal" placeholder="-37.7955" value="' + esc(d.lat) + '"></label>' +
-      '<label class="fld"><span class="lb">Longitud</span><input class="input num" id="ff-lng" inputmode="decimal" placeholder="-72.7025" value="' + esc(d.lng) + '"></label></div>' +
-      '<p class="meta-line" style="font-size:.76rem;margin:-4px 2px 12px">Coordenadas para consultar el clima. Puedes copiarlas desde Google Maps (clic derecho sobre el punto).</p>' +
+      '<div class="grid2"><label class="fld"><span class="lb">Latitud</span><input class="input num" id="ff-lat" inputmode="decimal" placeholder="Ej: -37.80" value="' + esc(d.lat) + '"></label>' +
+      '<label class="fld"><span class="lb">Longitud</span><input class="input num" id="ff-lng" inputmode="decimal" placeholder="Ej: -72.70" value="' + esc(d.lng) + '"></label></div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:-2px 0 6px"><button type="button" class="btn sm btn-soft" id="ff-geo">' + I.pin + "Buscar por comuna</button>" +
+      '<button type="button" class="btn sm btn-soft" id="ff-gps">' + I.pin + "Usar mi ubicación</button></div>" +
+      '<p class="meta-line" style="font-size:.76rem;margin:0 2px 12px">Coordenadas para consultar el clima. Búscalas por comuna, usa tu GPS en terreno, o cópialas desde Google Maps (clic derecho sobre el punto).</p>' +
       '<div class="grid2"><label class="fld"><span class="lb">Tipo de madera</span><input class="input" id="ff-mad" value="' + esc(d.tipoMadera) + '"></label>' +
       '<label class="fld"><span class="lb">Destino</span><input class="input" id="ff-dest" value="' + esc(d.destino) + '"></label></div>' +
       '<div class="grid2"><label class="fld"><span class="lb">Distancia (km)</span><input class="input num" id="ff-dist" inputmode="numeric" value="' + esc(d.distancia) + '"></label>' +
@@ -789,6 +806,27 @@ async function faenaForm(view, ctx, id) {
     '<div class="formbar"><button class="btn btn-primary" id="ff-save">' + I.check + "Guardar faena</button></div>";
   $("#ff-back", view).onclick = () => ctx.go("faenas", {});
   $$("#ff-acc [data-acc]", view).forEach(b => b.onclick = () => { d.estadoAcceso = b.getAttribute("data-acc"); $$("#ff-acc [data-acc]", view).forEach(x => x.classList.remove("on")); b.classList.add("on"); });
+  const geoBtn = $("#ff-geo", view);
+  if (geoBtn) geoBtn.onclick = async () => {
+    const q = ($("#ff-comuna", view).value || "").trim() || ($("#ff-ubi", view).value || "").trim() || ($("#ff-nombre", view).value || "").trim();
+    if (!q) { toast("Escribe la comuna primero", "err"); return; }
+    geoBtn.disabled = true; geoBtn.textContent = "Buscando...";
+    try {
+      const r = await geocode(q);
+      if (!r) { toast("Sin resultados para “" + q + "”", "err"); }
+      else { $("#ff-lat", view).value = Math.round(r.lat * 1e6) / 1e6; $("#ff-lng", view).value = Math.round(r.lng * 1e6) / 1e6; toast("Coordenadas de " + r.nombre, "ok"); }
+    } catch (e) { toast("No se pudo buscar: " + (e.message || e), "err"); }
+    geoBtn.disabled = false; geoBtn.innerHTML = I.pin + "Buscar por comuna";
+  };
+  const gpsBtn = $("#ff-gps", view);
+  if (gpsBtn) gpsBtn.onclick = () => {
+    gpsBtn.disabled = true; gpsBtn.textContent = "Ubicando...";
+    captureGPS((g, err) => {
+      if (g) { $("#ff-lat", view).value = Math.round(g.lat * 1e6) / 1e6; $("#ff-lng", view).value = Math.round(g.lng * 1e6) / 1e6; toast("Ubicación capturada", "ok"); }
+      else { toast(err === "denegado" ? "Permiso de ubicación denegado" : "No se pudo obtener el GPS", "err"); }
+      gpsBtn.disabled = false; gpsBtn.innerHTML = I.pin + "Usar mi ubicación";
+    });
+  };
   $("#ff-save", view).onclick = async () => {
     const g = i => { const el = $(i, view); return el ? el.value : ""; };
     const parseCoord = v => { const n = Number(String(v).trim()); return isFinite(n) && String(v).trim() !== "" ? n : null; };
