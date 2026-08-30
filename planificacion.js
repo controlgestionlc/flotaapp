@@ -361,66 +361,103 @@ function row2(k, v) {
 
 // -------- Reprogramación --------
 function reprogramar(view, ctx, plan, refs) {
-  const { trucks, faenas } = refs;
+  const { trucks } = refs;
   const activos = trucks.filter(t => t.activo !== false);
-  // Camiones con asignaciones que hoy no están disponibles (candidatos a reprogramar).
-  const conflictivos = activos.filter(t => plan.asignaciones.some(a => a.camionId === t.id) && !truckAvailability(t, refs, weekTs).ok);
-  const opciones = (conflictivos.length ? conflictivos : activos.filter(t => plan.asignaciones.some(a => a.camionId === t.id)));
   const body =
     '<p class="meta-line" style="margin:0 0 12px">Selecciona el camión afectado (avería, ausencia, etc.). Se conserva el programa original.</p>' +
-    '<div class="card" style="box-shadow:none">' + (opciones.length ? opciones.map(t => {
+    '<div class="card" style="box-shadow:none">' + (activos.length ? activos.map(t => {
       const n = plan.asignaciones.filter(a => a.camionId === t.id && a.faenaId).length;
       const av = truckAvailability(t, refs, weekTs);
-      return '<div class="row" data-rp="' + t.id + '" style="cursor:pointer"><span class="trucknum sm">' + esc(t.num) + '</span><div class="rl"><div class="t">' + esc(t.marca + " " + (t.modelo || "")) + '</div><div class="m"><span>' + n + ' asignación(es)</span><span class="' + (av.ok ? "" : "") + '">' + (av.ok ? "Disponible" : "No disponible") + '</span></div></div><span class="arrow">' + I.arrow + "</span></div>";
-    }).join("") : emptyBox("No hay camiones con asignaciones")) + "</div>";
+      return '<div class="row" data-rp="' + t.id + '" style="cursor:pointer"><span class="trucknum sm">' + esc(t.num) + '</span><div class="rl"><div class="t">' + esc(t.marca + " " + (t.modelo || "")) + '</div><div class="m"><span>' + n + ' asignación(es)</span><span style="color:var(--' + (av.ok ? "ok" : "crit") + ')">' + (av.ok ? "Disponible" : "No disponible") + "</span></div></div><span class='arrow'>" + I.arrow + "</span></div>";
+    }).join("") : emptyBox("No hay camiones")) + "</div>";
   openSheet("Reprogramar", body, () => {
     $$("[data-rp]").forEach(b => b.onclick = () => { const id = b.getAttribute("data-rp"); closeSheet(); reprogTruck(view, ctx, plan, refs, id); });
   });
 }
 
+// Aplica la reprogramación: marca fuera de servicio (opcional) y reasigna
+// (manual o automático), conservando el programa original y registrando cambios.
+async function aplicarReprog(view, ctx, plan, refs, truckId, motivo, marcarFuera, modoAuto) {
+  const prof = store.currentProfile() || {};
+  const por = prof.nombre || "", uidp = prof.uid || "", ts = Date.now();
+  if (!plan.original) plan.original = JSON.parse(JSON.stringify(plan.asignaciones));
+  plan.cambios = plan.cambios || [];
+  const clone = x => JSON.parse(JSON.stringify(x));
+  let cambios = 0, pend = 0;
+
+  if (modoAuto) {
+    const avail = refs.trucks.filter(t => t.activo !== false && t.id !== truckId && truckAvailability(t, refs, weekTs).ok);
+    const afectadas = plan.asignaciones.filter(a => a.camionId === truckId && a.faenaId && a.estado !== "pendiente")
+      .sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
+    afectadas.forEach(a => {
+      const libre = avail.find(t => !plan.asignaciones.some(x => x.camionId === t.id && x.fecha === a.fecha && x.faenaId));
+      const antes = clone(a);
+      if (libre) { a.camionId = libre.id; a.reprogramado = true; a.conductorId = ""; a.estado = "planificado"; cambios++; }
+      else { a.estado = "pendiente"; a.reprogramado = true; pend++; }
+      plan.cambios.push({ asignacionOriginal: antes, asignacionNueva: clone(a), motivo, usuario: por, ts });
+    });
+  } else {
+    let invalid = false;
+    $$("[data-reasg]").forEach(sel => {
+      const aid = sel.getAttribute("data-reasg"), destino = sel.value; if (!destino) return;
+      const a = plan.asignaciones.find(x => x.id === aid); if (!a) return;
+      const antes = clone(a);
+      if (destino === "__pend") { a.estado = "pendiente"; a.reprogramado = true; }
+      else {
+        if (plan.asignaciones.some(x => x.camionId === destino && x.fecha === a.fecha && x.faenaId)) { invalid = true; return; }
+        a.camionId = destino; a.reprogramado = true; a.conductorId = ""; a.estado = "planificado";
+      }
+      plan.cambios.push({ asignacionOriginal: antes, asignacionNueva: clone(a), motivo, usuario: por, ts }); cambios++;
+    });
+    if (invalid) { toast("Un camión destino ya tiene faena ese día", "err"); return false; }
+    if (!cambios && !marcarFuera) { toast("Elige un destino o marca el camión fuera de servicio", "err"); return false; }
+  }
+
+  // Marcar fuera de servicio = crear orden de taller (queda no disponible en todo el sistema).
+  if (marcarFuera) {
+    try {
+      await store.saveOrder(null, {
+        truckId, titulo: "Fuera de servicio", detalle: motivo, sources: [], reportadoPor: por,
+        estado: "en_taller", taller: "", fechaAgendada: ts, costoEstimado: 0,
+        trabajo: "", repuestos: [], manoObra: 0, createdBy: uidp, createdAt: ts, completedAt: null
+      });
+    } catch (e) { /* la orden es complementaria */ }
+  }
+  plan.estado = "modificado";
+  try { await persistPlan(plan); return { ok: true, cambios, pend }; }
+  catch (e) { toast("No se pudo guardar: " + (e.message || e), "err"); return false; }
+}
+
 function reprogTruck(view, ctx, plan, refs, truckId) {
   const { trucks, faenas } = refs;
   const t = trucks.find(x => x.id === truckId) || { num: "?" };
-  const afectadas = plan.asignaciones.filter(a => a.camionId === truckId && a.faenaId);
-  // Camiones disponibles para recibir (excluye el afectado).
+  const afectadas = plan.asignaciones.filter(a => a.camionId === truckId && a.faenaId && a.estado !== "pendiente")
+    .sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
   const dispo = trucks.filter(x => x.activo !== false && x.id !== truckId && truckAvailability(x, refs, weekTs).ok);
   const dispoOpts = '<option value="">— Elegir camión —</option>' + dispo.map(x => '<option value="' + x.id + '">' + esc(x.num + " · " + x.patente) + "</option>").join("") + '<option value="__pend">Dejar pendiente</option>';
   const body =
     '<div class="meta-line" style="margin:0 0 10px"><b style="color:var(--ink)">' + esc(t.num) + '</b> · ' + afectadas.length + ' asignación(es) afectada(s)</div>' +
     '<label class="fld"><span class="lb">Motivo del cambio</span><input class="input" id="rt-motivo" placeholder="Ej: avería, fuera de servicio"></label>' +
-    '<div class="card" style="box-shadow:none">' + (afectadas.length ? afectadas.sort((a, b) => a.fecha < b.fecha ? -1 : 1).map(a =>
+    '<label style="display:flex;align-items:center;gap:10px;margin:0 0 12px;cursor:pointer"><input type="checkbox" id="rt-fuera" checked style="width:20px;height:20px"><span class="meta-line" style="font-size:.85rem">Marcar el camión fuera de servicio (crea orden de taller)</span></label>' +
+    '<button class="btn btn-steel" id="rt-auto" style="width:100%;margin-bottom:14px">' + I.route + "Reasignar automáticamente</button>" +
+    (afectadas.length ? '<span class="eyebrow" style="display:block;margin-bottom:6px">O reasigna manualmente</span><div class="card" style="box-shadow:none">' + afectadas.map(a =>
       '<div class="row"><div class="rl"><div class="t">' + esc(fmtDate(new Date(a.fecha + "T12:00:00").getTime()).replace(/,.*/, "")) + " · " + esc(faName(faenas, a.faenaId)) + ' <span class="pill neutral">' + (a.viajesObjetivo || 0) + ' v.</span></div>' +
-      '<div class="m" style="margin-top:6px"><select class="input" data-reasg="' + a.id + '">' + dispoOpts + "</select></div></div></div>").join("") : emptyBox("Sin asignaciones")) + "</div>" +
-    '<button class="btn btn-primary" id="rt-ok" style="width:100%">' + I.check + "Aplicar reprogramación</button>";
+      '<div class="m" style="margin-top:6px"><select class="input" data-reasg="' + a.id + '">' + dispoOpts + "</select></div></div></div>").join("") + "</div>" +
+      '<button class="btn btn-primary" id="rt-ok" style="width:100%;margin-top:12px">' + I.check + "Aplicar reprogramación manual</button>" : "");
   openSheet("Reprogramar · " + t.num, body, () => {
-    $("#rt-ok").onclick = async () => {
+    const run = async (modoAuto) => {
       const motivo = ($("#rt-motivo").value || "").trim();
       if (!motivo) { toast("Indica el motivo del cambio", "err"); return; }
-      if (!plan.original) plan.original = JSON.parse(JSON.stringify(plan.asignaciones));
-      const por = (store.currentProfile() && store.currentProfile().nombre) || "";
-      const ts = Date.now();
-      let cambios = 0;
-      $$("[data-reasg]").forEach(sel => {
-        const aid = sel.getAttribute("data-reasg"); const destino = sel.value;
-        if (!destino) return;
-        const a = plan.asignaciones.find(x => x.id === aid); if (!a) return;
-        const antes = JSON.parse(JSON.stringify(a));
-        if (destino === "__pend") { a.estado = "pendiente"; a.reprogramado = true; }
-        else {
-          // ¿el destino ya tiene asignación ese día? entonces creamos una nueva y dejamos la original pendiente
-          const ocupado = plan.asignaciones.find(x => x.camionId === destino && x.fecha === a.fecha && x.faenaId);
-          if (ocupado) { toast("El camión destino ya tiene faena ese día", "err"); return; }
-          a.camionId = destino; a.reprogramado = true; a.estado = "planificado";
-        }
-        plan.cambios = plan.cambios || [];
-        plan.cambios.push({ asignacionOriginal: antes, asignacionNueva: JSON.parse(JSON.stringify(a)), motivo, usuario: por, ts });
-        cambios++;
-      });
-      if (!cambios) { toast("Elige al menos un destino", "err"); return; }
-      plan.estado = "modificado";
-      try { await persistPlan(plan); closeSheet(); toast(cambios + " asignación(es) reprogramada(s)", "ok"); renderPlanificacion(view, ctx); }
-      catch (e) { toast("No se pudo guardar: " + (e.message || e), "err"); }
+      const marcarFuera = $("#rt-fuera") ? $("#rt-fuera").checked : false;
+      const r = await aplicarReprog(view, ctx, plan, refs, truckId, motivo, marcarFuera, modoAuto);
+      if (!r) return;
+      closeSheet();
+      const msg = (marcarFuera ? t.num + " fuera de servicio. " : "") + (r.cambios ? r.cambios + " reasignada(s)" : "") + (r.pend ? " · " + r.pend + " pendiente(s)" : "");
+      toast(msg || "Reprogramación aplicada", "ok");
+      renderPlanificacion(view, ctx);
     };
+    $("#rt-auto").onclick = () => run(true);
+    const ok = $("#rt-ok"); if (ok) ok.onclick = () => run(false);
   });
 }
 

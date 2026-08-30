@@ -79,7 +79,9 @@ export function truckAvailability(t, data, dayTs) {
     const s = docStatus(o.vence);
     if (s.k === "vencido") docVencido = docVencido || (o.nombre || "Documento");
   });
-  if (docVencido) { items.push({ st: "bad", label: "Documentación vencida: " + docVencido }); ok = false; }
+  // La documentación vencida es una ADVERTENCIA (no bloquea la disponibilidad):
+  // el camión sigue asignable y el encargado decide, igual que en el panel.
+  if (docVencido) items.push({ st: "warn", label: "Documentación vencida: " + docVencido });
   else if (docPorVencer) items.push({ st: "warn", label: "Documento por vencer: " + docPorVencer });
   else items.push({ st: "ok", label: "Documentación vigente" });
 
