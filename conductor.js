@@ -1,6 +1,6 @@
 import { store } from "./store.js";
 import { CK_ITEMS } from "./checklist.js";
-import { weekInfo, dayKey, toMin } from "./planning.js";
+import { weekInfo, dayKey, toMin, truckAvailability, deriveFallas } from "./planning.js";
 import { openTruckWeek } from "./truckweek.js";
 import {
   I, esc, uid, fmtCLP, fmtDate, fmtDateTime, todayKey, dInput, iconSpan, emptyBox,
@@ -28,23 +28,44 @@ export async function renderConductor(view, ctx) {
   return home(view, ctx, sel);
 }
 
-function truckStatusLite(t) {
-  return { cls: t.activo === false ? "neutral" : "ok", label: t.activo === false ? "Inactivo" : "Operativo" };
+// Estado de disponibilidad para la selección de camión del conductor.
+// Usa el mismo criterio del semáforo del panel (órdenes, fallas, fuera de servicio).
+function pickStatus(av) {
+  if (av.k === "operativo") return { cls: "ok", label: "Operativo" };
+  if (av.k === "observacion") return { cls: "warn", label: "Con observación" };
+  return { cls: "bad", label: "No disponible" };
 }
 
-function pickTruck(view, ctx, trucks) {
-  const opts = trucks.filter(t => t.activo !== false).map(t => {
-    const st = truckStatusLite(t);
-    return '<button class="tile" data-pick="' + t.id + '"><span class="trucknum">' + esc(t.num) + "</span>" +
+async function pickTruck(view, ctx, trucks) {
+  // Datos para calcular disponibilidad real (igual que el panel).
+  const [orders, fuel, cks, bits, resolved] = await Promise.all([
+    store.listOrders().catch(() => []),
+    store.listFuel().catch(() => []),
+    store.listChecklists().catch(() => []),
+    store.listBitacora().catch(() => []),
+    store.listResolved().catch(() => [])
+  ]);
+  const fallas = deriveFallas(cks, bits, orders, resolved);
+  const data = { orders, fuel, fallas };
+  const now = Date.now();
+
+  const activos = trucks.filter(t => t.activo !== false);
+  const opts = activos.map(t => {
+    const av = truckAvailability(t, data, now);
+    const st = pickStatus(av);
+    const selectable = av.k === "operativo";
+    const attr = selectable ? 'data-pick="' + t.id + '"' : 'data-nope="' + t.id + '" disabled';
+    return '<button class="tile' + (selectable ? "" : " tile-off") + '" ' + attr + '><span class="trucknum">' + esc(t.num) + "</span>" +
       '<span class="tx"><b>' + esc(t.marca + " " + (t.modelo || "")) + "</b><span>" + esc(t.patente) + "</span></span>" +
       '<span class="pill ' + st.cls + '"><span class="dot"></span>' + st.label + "</span></button>";
   }).join("");
   view.innerHTML =
     '<section class="section" style="margin-top:6px"><span class="eyebrow">Paso 1 · Inicio de turno</span>' +
     '<h1 style="font-size:1.5rem;margin:6px 0 6px">Hola, ' + esc(ctx.profile.nombre.split(" ")[0]) + "</h1>" +
-    '<p class="meta-line" style="margin-bottom:16px">Antes de operar, selecciona el camión con el que trabajarás hoy.</p>' +
+    '<p class="meta-line" style="margin-bottom:16px">Antes de operar, selecciona el camión con el que trabajarás hoy. Los camiones no disponibles se muestran pero no se pueden seleccionar.</p>' +
     '<div class="tiles">' + (opts || emptyBox("No hay camiones registrados")) + "</div></section>";
   $$("[data-pick]", view).forEach(b => b.onclick = () => confirmTruck(ctx, trucks.find(t => t.id === b.getAttribute("data-pick"))));
+  $$("[data-nope]", view).forEach(b => b.onclick = () => toast("Ese camión no está disponible. Consulta con tu supervisor.", "err"));
 }
 
 // Ventana de confirmación antes de asignar el camión al turno.

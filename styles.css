@@ -99,6 +99,9 @@ a{color:var(--accent)}
 .tile .tx b{font-family:"Barlow Semi Condensed";font-weight:600;font-size:1.06rem;display:block}
 .tile .tx span{color:var(--muted);font-size:.85rem}
 .tile .arrow{color:var(--muted)}
+.tile.tile-off{opacity:.62;cursor:not-allowed;box-shadow:none;background:var(--surface)}
+.tile.tile-off:hover{border-color:var(--line)}
+.tile.tile-off:active{transform:none}
 
 .pill{display:inline-flex;align-items:center;gap:6px;font-family:"Barlow Semi Condensed";font-weight:600;font-size:.74rem;
   text-transform:uppercase;letter-spacing:.05em;padding:4px 9px;border-radius:999px;white-space:nowrap}

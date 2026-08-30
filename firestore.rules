@@ -102,13 +102,15 @@ service cloud.firestore {
 
     // Órdenes de taller y costos
     match /orders/{id} {
-      allow read: if hasRole(['supervisor','gerente','administrador']);
+      // Lectura para cualquier usuario activo: el conductor necesita saber
+      // si un camión está en taller para no seleccionarlo al iniciar turno.
+      allow read: if isActive();
       allow create, update, delete: if hasRole(['supervisor','administrador']);
     }
 
     // Fallas descartadas (marcadas por el supervisor/admin)
     match /resolved/{id} {
-      allow read: if hasRole(['supervisor','gerente','administrador']);
+      allow read: if isActive();
       allow write: if hasRole(['supervisor','administrador']);
     }
 
