@@ -301,11 +301,14 @@ async function availSheet(ctx, truckId, trucks, orders, fallas) {
       body += '<button class="btn btn-primary" style="margin-top:14px" id="av-crear">' + I.wrench + "Crear orden de taller</button>";
   }
 
+  if (can(ctx.profile, "order.manage"))
+    body += '<button class="btn btn-soft" style="margin-top:10px;color:var(--crit)" id="av-falla">' + I.alert + "Reportar falla / marcar no disponible</button>";
   body += '<button class="btn btn-soft" style="margin-top:10px" id="av-resumen">' + I.chart + "Ver resumen del camión</button>";
 
   openSheet("Disponibilidad · " + t.num, body, () => {
     const bo = $("#av-order"); if (bo) bo.onclick = () => { closeSheet(); orderDraft = null; ctx.go("order", { id: a.order.id }); };
     const bc = $("#av-crear"); if (bc) bc.onclick = () => { const fs = fallas.filter(f => f.truckId === truckId); closeSheet(); createOrder(ctx, fs[0].id, fallas); };
+    const bfa = $("#av-falla"); if (bfa) bfa.onclick = () => { closeSheet(); reportarFallaAdmin(ctx, truckId, t.num); };
     const bw = $("#av-week"); if (bw) bw.onclick = () => { closeSheet(); openTruckWeek(ctx, truckId, Date.now()); };
     const br = $("#av-resumen"); if (br) br.onclick = () => { closeSheet(); ctx.go("resumen", { id: truckId, from: "home" }); };
   });
@@ -313,6 +316,38 @@ async function availSheet(ctx, truckId, trucks, orders, fallas) {
 function row2(k, v) {
   return '<div style="display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px solid var(--line)">' +
     '<span class="meta-line">' + esc(k) + '</span><b style="text-align:right;font-weight:600">' + esc(v) + "</b></div>";
+}
+
+// El supervisor/admin reporta una falla del camión desde el panel. Se guarda
+// igual que la del chofer: entra a "Fallas por gestionar" (crear orden / descartar)
+// y una severidad alta deja el camión fuera de servicio.
+function reportarFallaAdmin(ctx, truckId, truckNum) {
+  const tipos = ["Falla mecánica", "Incidente"];
+  const st = { tipo: "Falla mecánica", sev: "alta", desc: "" };
+  const tipoChips = tipos.map(x => '<button class="chip' + (st.tipo === x ? " on" : "") + '" data-rf-t="' + esc(x) + '">' + esc(x) + "</button>").join("");
+  const sevChips = [["alta", "Alta"], ["media", "Media"], ["baja", "Baja"]].map(s => '<button class="chip sev-' + s[0] + (st.sev === s[0] ? " on sev-" + s[0] : "") + '" data-rf-s="' + s[0] + '">' + s[1] + "</button>").join("");
+  openSheet("Reportar falla · " + truckNum,
+    '<p class="meta-line" style="margin:0 0 12px;font-size:.82rem">Queda registrada como novedad del camión. Aparecerá en “Fallas por gestionar” con las mismas opciones (crear orden o descartar). Severidad <b>alta</b> deja el camión fuera de servicio.</p>' +
+    '<label class="fld"><span class="lb">Tipo</span><div class="chips" id="rf-tipo">' + tipoChips + "</div></label>" +
+    '<label class="fld"><span class="lb">Severidad</span><div class="chips" id="rf-sev">' + sevChips + "</div></label>" +
+    '<label class="fld"><span class="lb">Descripción</span><textarea class="input" id="rf-desc" placeholder="Describe la falla o el motivo por el que no está disponible..."></textarea></label>' +
+    '<button class="btn btn-danger" id="rf-ok" style="width:100%">' + I.check + "Guardar y marcar</button>",
+    () => {
+      $$("#rf-tipo [data-rf-t]").forEach(b => b.onclick = () => { st.tipo = b.getAttribute("data-rf-t"); $$("#rf-tipo [data-rf-t]").forEach(x => x.classList.remove("on")); b.classList.add("on"); });
+      $$("#rf-sev [data-rf-s]").forEach(b => b.onclick = () => { st.sev = b.getAttribute("data-rf-s"); $$("#rf-sev [data-rf-s]").forEach(x => x.classList.remove("on")); b.classList.add("on"); });
+      $("#rf-ok").onclick = async () => {
+        const desc = ($("#rf-desc").value || "").trim();
+        if (!desc) { toast("Escribe una descripción", "err"); return; }
+        const btn = $("#rf-ok"); btn.disabled = true; btn.textContent = "Guardando...";
+        try {
+          await store.addBitacora({
+            truckId, uid: ctx.profile.uid, deviceId: store.deviceId(), driverNombre: ctx.profile.nombre,
+            ts: Date.now(), tipo: st.tipo, sev: st.sev, desc, gps: null, origenReporte: "supervisor"
+          });
+          closeSheet(); toast("Falla registrada", "ok"); ctx.go("home", {});
+        } catch (e) { toast("No se pudo guardar: " + (e.message || e), "err"); btn.disabled = false; btn.textContent = "Guardar y marcar"; }
+      };
+    });
 }
 
 async function createOrder(ctx, fid, fallas) {
