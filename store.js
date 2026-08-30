@@ -62,8 +62,8 @@ function demoAdapter() {
       { id: "t1",  num: "C-01", patente: "JKLR-52", marca: "Mercedes-Benz", modelo: "Actros", anio: 2021, activo: true, docs: mkDocs({n:"PC-2026-1101",v:vence(70)},{n:"SOAP-88121",v:vence(120)},{n:"RT-55012",v:vence(15)}), createdAt: now },
       { id: "t2",  num: "C-02", patente: "HXPT-19", marca: "Volvo",         modelo: "FH",     anio: 2020, activo: true, docs: mkDocs({n:"PC-2026-1102",v:vence(200)},{n:"SOAP-88122",v:vence(-5)},{n:"RT-55013",v:vence(90)}), createdAt: now },
       { id: "t3",  num: "C-03", patente: "KDFS-73", marca: "Scania",        modelo: "R450",   anio: 2022, activo: true, docs: mkDocs({n:"PC-2026-1103",v:vence(300)},{n:"SOAP-88123",v:vence(60)},{n:"RT-55014",v:vence(45)}), createdAt: now },
-      { id: "t4",  num: "C-04", patente: "GBHT-08", marca: "Mercedes-Benz", modelo: "Axor",   anio: 2019, activo: true, docs: mkDocs({n:"PC-2026-1104",v:vence(25)},{n:"SOAP-88124",v:vence(150)},{n:"RT-55015",v:vence(220)}), createdAt: now },
-      { id: "t5",  num: "C-05", patente: "LPRV-64", marca: "Volvo",         modelo: "FMX",    anio: 2021, activo: true, docs: mkDocs({n:"PC-2026-1105",v:vence(180)},{n:"SOAP-88125",v:vence(180)},{n:"RT-55016",v:vence(180)}), createdAt: now }
+      { id: "t4",  num: "C-04", patente: "GBHT-08", marca: "Mercedes-Benz", modelo: "Axor",   anio: 2019, activo: true, conductorUid: "u_chofer", conductorNombre: "José Muñoz", docs: mkDocs({n:"PC-2026-1104",v:vence(25)},{n:"SOAP-88124",v:vence(150)},{n:"RT-55015",v:vence(220)}), createdAt: now },
+      { id: "t5",  num: "C-05", patente: "LPRV-64", marca: "Volvo",         modelo: "FMX",    anio: 2021, activo: true, conductorUid: "u_chofer2", conductorNombre: "Pedro Salazar", docs: mkDocs({n:"PC-2026-1105",v:vence(180)},{n:"SOAP-88125",v:vence(180)},{n:"RT-55016",v:vence(180)}), createdAt: now }
     ];
     const okAll = { neumaticos:"ok",frenos:"ok",luces:"ok",niveles:"ok",direccion:"ok",espejos:"ok",fugas:"ok",docs:"ok",seguridad:"ok",carga:"ok" };
     const checklists = [

@@ -62,7 +62,8 @@ async function truckDetail(view, ctx) {
     '<div style="flex:1"><div style="font-family:Barlow Semi Condensed;font-weight:700;font-size:1.2rem">' + esc(t.marca + " " + (t.modelo || "")) + "</div>" +
     '<div style="margin-top:5px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="plate">' + esc(t.patente) + "</span>" +
     (t.anio ? '<span class="meta-line">Año ' + t.anio + "</span>" : "") +
-    '<span class="pill ' + (t.activo === false ? "neutral" : "ok") + '"><span class="dot"></span>' + (t.activo === false ? "Inactivo" : "Activo") + "</span></div></div></div></div>" +
+    '<span class="pill ' + (t.activo === false ? "neutral" : "ok") + '"><span class="dot"></span>' + (t.activo === false ? "Inactivo" : "Activo") + "</span></div>" +
+    '<div class="meta-line" style="margin-top:8px;display:flex;align-items:center;gap:6px"><span style="display:inline-flex;width:15px;height:15px;color:var(--muted)">' + I.users + "</span>Conductor: <b style=\"color:var(--ink)\">" + esc(t.conductorNombre || "Sin asignar") + "</b></div></div></div></div>" +
     '<div class="section"><span class="eyebrow">Documentación</span><div class="card pad" style="margin-top:8px">' + docs + "</div></div>" +
     '<button class="btn btn-soft section" id="td-resumen">' + I.chart + "Ver resumen operativo</button>" +
     (manage ? '<button class="btn btn-soft section" id="td-mant">' + I.wrench + "Pauta de mantención</button>" : "") +
@@ -77,10 +78,11 @@ async function truckDetail(view, ctx) {
 async function truckForm(view, ctx) {
   const editing = !!ctx.params.id;
   const t = editing ? await store.getTruck(ctx.params.id) : null;
+  const conductores = (await store.listUsers().catch(() => [])).filter(u => u.role === "conductor" && u.activo !== false);
   if (!form) {
     form = t ? {
       num: t.num || "", patente: t.patente || "", marca: t.marca || "", modelo: t.modelo || "", anio: t.anio || "",
-      activo: t.activo !== false,
+      activo: t.activo !== false, conductorUid: t.conductorUid || "",
       docs: {
         permisoCirculacion: Object.assign({ numero: "", vence: "" }, t.docs && t.docs.permisoCirculacion),
         soap: Object.assign({ numero: "", vence: "" }, t.docs && t.docs.soap),
@@ -88,11 +90,13 @@ async function truckForm(view, ctx) {
         otros: (t.docs && t.docs.otros || []).map(o => ({ nombre: o.nombre, numero: o.numero, vence: o.vence }))
       }
     } : {
-      num: "", patente: "", marca: "", modelo: "", anio: "", activo: true,
+      num: "", patente: "", marca: "", modelo: "", anio: "", activo: true, conductorUid: "",
       docs: { permisoCirculacion: { numero: "", vence: "" }, soap: { numero: "", vence: "" }, revisionTecnica: { numero: "", vence: "" }, otros: [] }
     };
   }
   const f = form;
+  const condOpts = '<option value="">Sin asignar</option>' + conductores.map(u =>
+    '<option value="' + esc(u.uid) + '"' + (f.conductorUid === u.uid ? " selected" : "") + ">" + esc(u.nombre || u.email) + "</option>").join("");
   const docFields = DOC_TYPES.map(dt =>
     '<div class="section" style="margin-bottom:14px"><span class="eyebrow" style="display:block;margin-bottom:8px">' + esc(dt.n) + "</span>" +
     '<div class="grid2"><label class="fld" style="margin:0"><span class="lb">Número</span><input class="input" data-doc="' + dt.k + '" data-f="numero" placeholder="N° de documento" value="' + esc(f.docs[dt.k].numero || "") + '"></label>' +
@@ -111,7 +115,9 @@ async function truckForm(view, ctx) {
       '<label class="fld"><span class="lb">Patente</span><input class="input" id="tf-patente" placeholder="ABCD-12" value="' + esc(f.patente) + '"></label></div>' +
       '<div class="grid2"><label class="fld"><span class="lb">Marca</span><input class="input" id="tf-marca" placeholder="Volvo" value="' + esc(f.marca) + '"></label>' +
       '<label class="fld"><span class="lb">Modelo</span><input class="input" id="tf-modelo" placeholder="FH" value="' + esc(f.modelo) + '"></label></div>' +
-      '<label class="fld" style="margin-bottom:0"><span class="lb">Año</span><input class="input num" id="tf-anio" inputmode="numeric" placeholder="2022" value="' + esc(f.anio) + '"></label>' +
+      '<label class="fld"><span class="lb">Año</span><input class="input num" id="tf-anio" inputmode="numeric" placeholder="2022" value="' + esc(f.anio) + '"></label>' +
+      '<label class="fld" style="margin-bottom:0"><span class="lb">Conductor asignado</span><select class="input" id="tf-cond">' + condOpts + "</select>" +
+      '<span class="meta-line" style="margin-top:6px">Solo este conductor podrá seleccionar el camión al iniciar su turno.</span></label>' +
     "</div>" +
     '<div class="section"><span class="eyebrow" style="display:block;margin:0 2px 10px">Documentación (número y vencimiento)</span>' +
       '<div class="card pad">' + docFields +
@@ -123,6 +129,7 @@ async function truckForm(view, ctx) {
   $("#tf-back", view).onclick = back;
   const bindF = (id, key) => { const el = $(id, view); if (el) el.oninput = () => { f[key] = el.value; }; };
   bindF("#tf-num", "num"); bindF("#tf-patente", "patente"); bindF("#tf-marca", "marca"); bindF("#tf-modelo", "modelo"); bindF("#tf-anio", "anio");
+  const condSel = $("#tf-cond", view); if (condSel) condSel.onchange = () => { f.conductorUid = condSel.value; };
   $$("[data-doc]", view).forEach(inp => inp.oninput = () => { f.docs[inp.getAttribute("data-doc")][inp.getAttribute("data-f")] = inp.value; });
   $$("[data-otro]", view).forEach(inp => inp.oninput = () => { const i = +inp.getAttribute("data-otro"); f.docs.otros[i][inp.getAttribute("data-f")] = inp.value; });
   $$("[data-delotro]", view).forEach(b => b.onclick = () => { syncOtros(view); f.docs.otros.splice(+b.getAttribute("data-delotro"), 1); truckForm(view, ctx); });
@@ -130,9 +137,11 @@ async function truckForm(view, ctx) {
   $("#tf-save", view).onclick = async () => {
     syncAll(view);
     if (!f.num.trim() || !f.patente.trim()) { toast("N° interno y patente son obligatorios", "err"); return; }
+    const cond = conductores.find(u => u.uid === f.conductorUid);
     const data = {
       num: f.num.trim(), patente: f.patente.trim().toUpperCase(), marca: f.marca.trim(), modelo: f.modelo.trim(),
       anio: f.anio ? Number(f.anio) : null, activo: f.activo !== false,
+      conductorUid: cond ? cond.uid : null, conductorNombre: cond ? (cond.nombre || cond.email) : null,
       docs: {
         permisoCirculacion: cleanDoc(f.docs.permisoCirculacion),
         soap: cleanDoc(f.docs.soap),
@@ -149,6 +158,7 @@ async function truckForm(view, ctx) {
   function syncOtros(v) { $$("[data-otro]", v).forEach(inp => { const i = +inp.getAttribute("data-otro"); if (f.docs.otros[i]) f.docs.otros[i][inp.getAttribute("data-f")] = inp.value; }); }
   function syncAll(v) {
     ["num", "patente", "marca", "modelo", "anio"].forEach(k => { const el = $("#tf-" + k, v); if (el) f[k] = el.value; });
+    const cs = $("#tf-cond", v); if (cs) f.conductorUid = cs.value;
     $$("[data-doc]", v).forEach(inp => { f.docs[inp.getAttribute("data-doc")][inp.getAttribute("data-f")] = inp.value; });
     syncOtros(v);
   }

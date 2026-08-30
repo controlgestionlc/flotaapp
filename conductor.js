@@ -48,24 +48,34 @@ async function pickTruck(view, ctx, trucks) {
   const fallas = deriveFallas(cks, bits, orders, resolved);
   const data = { orders, fuel, fallas };
   const now = Date.now();
+  const myUid = ctx.profile.uid;
 
   const activos = trucks.filter(t => t.activo !== false);
+  const tengoAsignado = activos.some(t => t.conductorUid === myUid);
   const opts = activos.map(t => {
     const av = truckAvailability(t, data, now);
     const st = pickStatus(av);
-    const selectable = av.k === "operativo";
-    const attr = selectable ? 'data-pick="' + t.id + '"' : 'data-nope="' + t.id + '" disabled';
-    return '<button class="tile' + (selectable ? "" : " tile-off") + '" ' + attr + '><span class="trucknum">' + esc(t.num) + "</span>" +
+    const mine = t.conductorUid === myUid;
+    const selectable = mine && av.k === "operativo";
+    let msg = "";
+    if (!mine) msg = "Este camión no está asignado a ti. Solo puedes usar el que te asignó tu supervisor.";
+    else if (av.k !== "operativo") msg = "Tu camión no está disponible en este momento. Consulta con tu supervisor.";
+    const attr = selectable ? 'data-pick="' + t.id + '"' : 'data-nope="' + t.id + '" data-msg="' + esc(msg) + '" aria-disabled="true"';
+    const badge = mine ? '<span style="font-family:Barlow Semi Condensed;font-weight:600;font-size:.68rem;color:var(--accent);text-transform:uppercase;letter-spacing:.04em">Tu camión</span>' : "";
+    return '<button class="tile' + (mine ? " tile-mine" : "") + (selectable ? "" : " tile-off") + '" ' + attr + '><span class="trucknum">' + esc(t.num) + "</span>" +
       '<span class="tx"><b>' + esc(t.marca + " " + (t.modelo || "")) + "</b><span>" + esc(t.patente) + "</span></span>" +
-      '<span class="pill ' + st.cls + '"><span class="dot"></span>' + st.label + "</span></button>";
+      '<span style="display:flex;flex-direction:column;gap:4px;align-items:flex-end"><span class="pill ' + st.cls + '"><span class="dot"></span>' + st.label + "</span>" + badge + "</span></button>";
   }).join("");
+  const intro = tengoAsignado
+    ? "Selecciona tu camión para iniciar el turno. Puedes ver el estado de los demás, pero solo puedes usar el que te asignó tu supervisor."
+    : "Aún no tienes un camión asignado. Contacta a tu supervisor para que te asigne uno antes de operar.";
   view.innerHTML =
     '<section class="section" style="margin-top:6px"><span class="eyebrow">Paso 1 · Inicio de turno</span>' +
     '<h1 style="font-size:1.5rem;margin:6px 0 6px">Hola, ' + esc(ctx.profile.nombre.split(" ")[0]) + "</h1>" +
-    '<p class="meta-line" style="margin-bottom:16px">Antes de operar, selecciona el camión con el que trabajarás hoy. Los camiones no disponibles se muestran pero no se pueden seleccionar.</p>' +
+    '<p class="meta-line" style="margin-bottom:16px">' + intro + "</p>" +
     '<div class="tiles">' + (opts || emptyBox("No hay camiones registrados")) + "</div></section>";
   $$("[data-pick]", view).forEach(b => b.onclick = () => confirmTruck(ctx, trucks.find(t => t.id === b.getAttribute("data-pick"))));
-  $$("[data-nope]", view).forEach(b => b.onclick = () => toast("Ese camión no está disponible. Consulta con tu supervisor.", "err"));
+  $$("[data-nope]", view).forEach(b => b.onclick = () => toast(b.getAttribute("data-msg") || "Camión no disponible.", "err"));
 }
 
 // Ventana de confirmación antes de asignar el camión al turno.
