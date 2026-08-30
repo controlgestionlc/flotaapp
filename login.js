@@ -19,6 +19,7 @@ export async function renderLogin(host, ctx, onLogin) {
         '<button class="btn btn-primary" id="lg-btn" style="width:100%">' + I.logout + "Ingresar</button>" +
         (demo ? demoNote() : "") +
       "</div>" +
+      '<div class="meta-line" style="text-align:center;font-size:.72rem;margin-top:14px">Versión ' + esc((typeof window !== "undefined" && window.BF_VERSION) || "—") + "</div>" +
     "</div>";
 
   const email = host.querySelector("#lg-email");
