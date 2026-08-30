@@ -223,6 +223,14 @@ hr.sep{border:0;border-top:1px solid var(--line);margin:16px 0}
 
 .c-topbar{display:flex;justify-content:flex-start;margin:2px 0 12px}
 
+/* tira de clima semanal */
+.clima-week{display:flex;gap:6px;overflow-x:auto;padding:4px 0}
+.cw-day{flex:1;min-width:44px;display:flex;flex-direction:column;align-items:center;gap:3px;background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:7px 4px}
+.cw-day .cw-d{font-size:.7rem;color:var(--muted);font-family:"Barlow Semi Condensed";font-weight:600;text-transform:uppercase}
+.cw-day .cw-e{font-size:1rem;line-height:1}
+.cw-day .cw-dot{width:9px;height:9px;border-radius:50%}
+.cw-day .cw-p{font-size:.68rem;color:var(--muted)}
+
 /* planificación de flota */
 .pl-weeknav{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .pl-weeklabel{text-align:center;line-height:1.2}

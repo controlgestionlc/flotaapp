@@ -226,8 +226,16 @@ export function autoAssign(trucks, faenas, opts) {
   const reserveTarget = (o.criterio === "reserva") ? Math.max(0, Number(o.reservaMin) || 0) : 0;
   const cap = Math.max(0, N - reserveTarget);
 
+  // Viajes máximos por camión en la faena: el menor entre lo que permite la
+  // jornada/tiempo de ciclo y la capacidad diaria configurada (viajes/día).
+  const effTpt = (f) => {
+    const t = tripsPerTruck(o.jornadaMin, f.tiempoCiclo);
+    const cap = Number(f.capacidadDia) || 0;
+    return cap > 0 ? Math.min(t, cap) : t;
+  };
+
   const req = {}, alloc = {};
-  order.forEach(f => { req[f.id] = Math.max(1, Math.ceil(f.objetivoDia / tripsPerTruck(o.jornadaMin, f.tiempoCiclo))); alloc[f.id] = 0; });
+  order.forEach(f => { req[f.id] = Math.max(1, Math.ceil(f.objetivoDia / effTpt(f))); alloc[f.id] = 0; });
 
   // Paso 1: cubrir lo requerido por faena (hasta cap).
   let used = 0;
@@ -250,7 +258,7 @@ export function autoAssign(trucks, faenas, opts) {
   // Cada viaje transporta la capacidad del camión (18 MR / 20 M3 según la faena).
   let ti = 0; const proposal = []; const resumen = [];
   for (const f of order) {
-    const tpt = tripsPerTruck(o.jornadaMin, f.tiempoCiclo);
+    const tpt = effTpt(f);
     const cap = capacidadViaje(f.unidad, o);
     const k = alloc[f.id]; let obj = f.objetivoDia; let vsum = 0;
     for (let i = 0; i < k && ti < avail.length; i++) {

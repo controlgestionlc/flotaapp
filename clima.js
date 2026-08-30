@@ -10,25 +10,37 @@ export function hasCoords(f) {
   return f && isFinite(Number(f.lat)) && isFinite(Number(f.lng)) && (Number(f.lat) !== 0 || Number(f.lng) !== 0);
 }
 
-// Consulta el clima de una faena. Lanza error si no hay coordenadas o falla la red.
+// Consulta el clima de una faena: condición actual + pronóstico diario
+// para 7 días (para evaluar la semana). Lanza error si no hay coordenadas.
 export async function fetchFaenaClima(f) {
   if (!hasCoords(f)) throw new Error("La faena no tiene coordenadas");
   const url = API + "?latitude=" + encodeURIComponent(f.lat) + "&longitude=" + encodeURIComponent(f.lng) +
     "&current=temperature_2m,precipitation,wind_speed_10m,weather_code" +
-    "&daily=precipitation_sum,precipitation_probability_max" +
-    "&timezone=auto&forecast_days=2";
+    "&daily=weather_code,temperature_2m_max,precipitation_sum,precipitation_probability_max,wind_speed_10m_max" +
+    "&timezone=auto&forecast_days=7";
   const res = await fetch(url);
   if (!res.ok) throw new Error("Servicio de clima no disponible (" + res.status + ")");
   const j = await res.json();
   const c = j.current || {}, d = j.daily || {};
-  const first = a => (Array.isArray(a) && a.length ? a[0] : null);
+  const n = (a, i) => (Array.isArray(a) && a[i] != null ? Number(a[i]) : null);
+  const dias = (d.time || []).map((fecha, i) => ({
+    fecha: fecha,
+    code: n(d.weather_code, i),
+    tmax: n(d.temperature_2m_max, i),
+    precip24: n(d.precipitation_sum, i),
+    probLluvia: n(d.precipitation_probability_max, i),
+    windKmh: n(d.wind_speed_10m_max, i)
+  }));
+  const hoy = dias[0] || {};
   return {
     tempC: c.temperature_2m != null ? Number(c.temperature_2m) : null,
     precipMm: c.precipitation != null ? Number(c.precipitation) : null,
     windKmh: c.wind_speed_10m != null ? Number(c.wind_speed_10m) : null,
     code: c.weather_code != null ? Number(c.weather_code) : null,
-    precip24: first(d.precipitation_sum) != null ? Number(first(d.precipitation_sum)) : null,
-    probLluvia: first(d.precipitation_probability_max) != null ? Number(first(d.precipitation_probability_max)) : null,
+    // Compat: "hoy" para el resumen y la evaluación puntual.
+    precip24: hoy.precip24 != null ? hoy.precip24 : null,
+    probLluvia: hoy.probLluvia != null ? hoy.probLluvia : null,
+    dias: dias,
     ts: Date.now()
   };
 }
