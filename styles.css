@@ -99,6 +99,37 @@ a{color:var(--accent)}
 .tile .tx b{font-family:"Barlow Semi Condensed";font-weight:600;font-size:1.06rem;display:block}
 .tile .tx span{color:var(--muted);font-size:.85rem}
 .tile .arrow{color:var(--muted)}
+/* Detalle semanal de planificación (ventana + impresión) */
+.wd-day{margin-bottom:12px}
+.wd-day h4{margin:12px 0 6px;font-size:.95rem;font-family:"Barlow Semi Condensed";font-weight:600}
+.wd-sub{font-weight:400;color:var(--muted);font-size:.76rem}
+.wd-empty{color:var(--muted);font-size:.85rem;margin:0 0 6px}
+.wd-table{width:100%;border-collapse:collapse;font-size:.8rem}
+.wd-table th,.wd-table td{border-bottom:1px solid var(--line);padding:5px 7px;text-align:left;white-space:nowrap}
+.wd-table th{color:var(--muted);font-weight:600;text-transform:uppercase;font-size:.68rem;letter-spacing:.03em}
+.wd-table .r{text-align:right}
+.wd-tot{margin-top:12px;padding-top:10px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:12px;font-size:.85rem;flex-wrap:wrap}
+
+/* Área e impresión: oculta la app y muestra solo el reporte */
+#print-area{display:none}
+@media print{
+  body > *:not(#print-area){display:none !important}
+  #print-area{display:block !important;position:static;color:#000;padding:0 6px;font-family:"Public Sans",system-ui,sans-serif}
+  html,body{background:#fff !important}
+  #print-area .pr-header h1{font-size:18px;margin:0}
+  #print-area .pr-sub{font-size:12px;color:#333}
+  #print-area .pr-week{font-weight:700;margin-top:6px;font-size:13px}
+  #print-area .pr-gen{font-size:11px;color:#555;margin:2px 0 12px}
+  #print-area .wd-day{margin-bottom:10px}
+  #print-area .wd-day h4{margin:8px 0 4px;font-size:13px;border-bottom:1px solid #000;padding-bottom:2px}
+  #print-area .wd-sub{color:#555;font-size:11px}
+  #print-area .wd-empty{color:#777;font-size:11px}
+  #print-area .wd-table{width:100%;border-collapse:collapse;font-size:11px}
+  #print-area .wd-table th,#print-area .wd-table td{border:1px solid #999;padding:3px 6px;text-align:left}
+  #print-area .wd-table th.r,#print-area .wd-table td.r{text-align:right}
+  #print-area .wd-tot{margin-top:8px;font-size:12px;border-top:1px solid #000;padding-top:6px}
+  .wd-day,.wd-table{page-break-inside:avoid}
+}
 .tile.tile-mine{border-color:var(--accent)}
 .tile.tile-off{opacity:.62;cursor:not-allowed;box-shadow:none;background:var(--surface)}
 .tile.tile-off:hover{border-color:var(--line)}

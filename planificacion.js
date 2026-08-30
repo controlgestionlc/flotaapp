@@ -127,11 +127,11 @@ async function semanal(view, ctx) {
 
   const est = PLAN_ESTADOS[plan.estado] || PLAN_ESTADOS.borrador;
 
-  const kpi = (cls, val, lab, sub) => '<div class="kpi ' + cls + '"><span class="stripe"></span><div class="lab">' + esc(lab) + '</div><div class="val num">' + esc(val) + '</div><div class="sub">' + esc(sub) + "</div></div>";
+  const kpi = (cls, val, lab, sub, id) => '<div class="kpi ' + cls + '"' + (id ? ' id="' + id + '" role="button" tabindex="0" style="cursor:pointer"' : "") + '><span class="stripe"></span><div class="lab">' + esc(lab) + '</div><div class="val num">' + esc(val) + '</div><div class="sub">' + esc(sub) + "</div></div>";
   const kpis = '<div class="kpis section">' +
     kpi("a", disp + "/" + activos.length, "Camiones disponibles", "operativos hoy") +
     kpi("w", String(faenasActivas), "Faenas activas", "en el programa") +
-    kpi("a", String(viajesPlan), "Viajes planificados", "meta " + (plan.objetivoViajes || viajesPlan)) +
+    kpi("a", String(viajesPlan), "Viajes planificados", "meta " + (plan.objetivoViajes || viajesPlan), "pl-kpi-viajes") +
     kpi(alerts.length ? "c" : "g", String(alerts.length), "Alertas", alerts.length ? "requieren revisión" : "sin alertas") +
     "</div>";
 
@@ -209,6 +209,68 @@ async function semanal(view, ctx) {
   } else {
     $$("[data-cell]", view).forEach(b => b.onclick = () => verDay(ctx, plan, refs, b.getAttribute("data-cell")));
   }
+  const kv = $("#pl-kpi-viajes", view); if (kv) kv.onclick = () => detalleSemana(ctx, plan, refs, wk);
+}
+
+// Construye el detalle de asignaciones de la semana, día por día (para la
+// ventana en pantalla y para la impresión). Devuelve HTML.
+function weekDetailBody(plan, refs, wk) {
+  const { trucks, faenas, conductores } = refs;
+  const tNum = id => { const t = trucks.find(x => x.id === id); return t ? esc(t.num) : esc(id); };
+  const coN = id => { const u = (conductores || []).find(x => x.uid === id); return u ? esc(u.nombre) : ""; };
+  let gV = 0, gM = 0, gA = 0;
+  const sections = wk.dias.map((ts, i) => {
+    const dk = dayKey(ts);
+    const asigs = (plan.asignaciones || []).filter(a => a.fecha === dk && a.faenaId)
+      .sort((a, b) => (a.turnoInicio || "").localeCompare(b.turnoInicio || ""));
+    const d = new Date(ts);
+    const dLabel = DIAS_LARGO[i] + " " + d.getDate() + "/" + (d.getMonth() + 1);
+    if (!asigs.length) return '<div class="wd-day"><h4>' + dLabel + '</h4><p class="wd-empty">Sin asignaciones</p></div>';
+    let dV = 0;
+    const rows = asigs.map(a => {
+      const v = Number(a.viajesObjetivo) || 0, m = Number(a.volumenObjetivo) || 0;
+      dV += v; gV += v; gM += m; gA++;
+      return "<tr><td>" + tNum(a.camionId) + "</td><td>" + esc(faName(faenas, a.faenaId)) + "</td><td>" +
+        esc((a.turnoInicio || "--") + " - " + (a.turnoFin || "--")) + '</td><td class="r">' + v + '</td><td class="r">' +
+        (m ? m.toLocaleString("es-CL") : "") + "</td><td>" + coN(a.conductorId) + "</td></tr>";
+    }).join("");
+    return '<div class="wd-day"><h4>' + dLabel + ' <span class="wd-sub">' + asigs.length + " asig. · " + dV + " viajes</span></h4>" +
+      '<table class="wd-table"><thead><tr><th>Camión</th><th>Faena</th><th>Horario</th><th class="r">Viajes</th><th class="r">Metros</th><th>Conductor</th></tr></thead><tbody>' +
+      rows + "</tbody></table></div>";
+  }).join("");
+  const totals = '<div class="wd-tot"><span>Total semana</span><b>' + gA + " asignaciones · " + gV + " viajes · " + gM.toLocaleString("es-CL") + " metros</b></div>";
+  return sections + totals;
+}
+
+// Ventana con el detalle de la semana + botón de impresión / PDF.
+async function detalleSemana(ctx, plan, refs, wk) {
+  let company = { nombre: "Transportes La Cabaña", app: "Bitácora de Camiones" };
+  try { company = await store.getCompany(); } catch (e) { /* usa el fallback */ }
+  const header = '<div class="meta-line" style="margin:-4px 0 10px"><b style="color:var(--ink)">Semana ' + wk.num + "</b> · " + fmtDate(wk.inicio) + " ─ " + fmtDate(wk.fin) + "</div>";
+  openSheet("Detalle de la semana",
+    '<div id="wd-content" style="overflow-x:auto">' + header + weekDetailBody(plan, refs, wk) + "</div>" +
+    '<button class="btn btn-primary" id="wd-print" style="width:100%;margin-top:12px">' + I.doc + "Imprimir / Guardar PDF</button>",
+    () => {
+      const bp = $("#wd-print"); if (bp) bp.onclick = () => printWeek(company, plan, refs, wk);
+    });
+}
+
+// Prepara un área de impresión con encabezado y el detalle, y llama a imprimir.
+// El CSS @media print oculta la app y solo muestra este bloque.
+function printWeek(company, plan, refs, wk) {
+  const old = document.getElementById("print-area"); if (old) old.remove();
+  const pa = document.createElement("div");
+  pa.id = "print-area";
+  pa.innerHTML =
+    '<div class="pr-header"><h1>' + esc(company.nombre || "") + "</h1>" +
+    '<div class="pr-sub">' + esc(company.app || "Bitácora de Camiones") + " · Planificación de flota</div>" +
+    '<div class="pr-week">Semana ' + wk.num + " · " + fmtDate(wk.inicio) + " ─ " + fmtDate(wk.fin) + "</div>" +
+    '<div class="pr-gen">Generado: ' + fmtDateTime(Date.now()) + "</div></div>" +
+    weekDetailBody(plan, refs, wk);
+  document.body.appendChild(pa);
+  const cleanup = () => { const p = document.getElementById("print-area"); if (p) p.remove(); window.removeEventListener("afterprint", cleanup); };
+  window.addEventListener("afterprint", cleanup);
+  setTimeout(() => { try { window.print(); } catch (e) { /* algunos navegadores móviles */ } setTimeout(cleanup, 2000); }, 80);
 }
 
 function editObjetivo(view, ctx, plan) {
