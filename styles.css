@@ -258,7 +258,7 @@ hr.sep{border:0;border-top:1px solid var(--line);margin:16px 0}
 .pl-truck{display:flex;align-items:center;gap:8px}
 .pl-truck span b{display:block;font-size:.82rem}
 .pl-truck span small{font-size:.7rem}
-.pl-truck span small.ok{color:var(--ok)} .pl-truck span small.bad{color:var(--crit)}
+.pl-truck span small.ok{color:var(--ok)} .pl-truck span small.warn{color:var(--warn)} .pl-truck span small.bad{color:var(--crit)}
 .pl-cell{width:100%;min-height:52px;border:0;background:transparent;cursor:pointer;display:flex;flex-direction:column;gap:2px;justify-content:center;align-items:flex-start;padding:8px 9px;color:var(--ink);text-align:left}
 .pl-cell b{font-family:"Barlow Semi Condensed";font-size:.86rem;line-height:1.05}
 .pl-cell .num{color:var(--muted);font-size:.76rem}

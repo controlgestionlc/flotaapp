@@ -50,22 +50,28 @@ export function dayKey(ts) {
 // ---------------------------------------------------------------
 
 // Disponibilidad de un camión: consulta estado, taller, documentación
-// y mantención preventiva. NO decide por el usuario, solo informa.
+// y mantención preventiva. Devuelve el mismo estado que el panel:
+// k = operativo / observacion / fuera. ok = (k === "operativo").
 export function truckAvailability(t, data, dayTs) {
   const orders = (data && data.orders) || [];
   const fuel = (data && data.fuel) || [];
+  const fallas = (data && data.fallas) || [];
   const items = [];
-  let ok = true;
-
-  if (t.activo === false) { items.push({ st: "bad", label: "Camión fuera de servicio" }); ok = false; }
-  else items.push({ st: "ok", label: "Camión operativo" });
-
+  const fs = fallas.filter(f => f.truckId === t.id);
   const openO = orders.filter(o => o.truckId === t.id && o.estado !== "completado" && o.estado !== "descartada");
   const enTaller = openO.find(o => o.estado === "en_taller");
   const agendado = openO.find(o => o.estado === "agendado" || o.estado === "pendiente");
-  if (enTaller) { items.push({ st: "bad", label: "En taller" + (enTaller.otNumero ? " (" + enTaller.otNumero + ")" : "") }); ok = false; }
-  else if (agendado) items.push({ st: "warn", label: "Mantención programada" + (agendado.fechaAgendada ? " " + dayKey(agendado.fechaAgendada) : "") });
-  else items.push({ st: "ok", label: "Sin mantención en taller" });
+  const fallaAlta = fs.some(f => f.sev === "alta");
+
+  // Estado principal (mismo criterio que el semáforo del panel).
+  let k;
+  if (t.activo === false) { items.push({ st: "bad", label: "Camión fuera de servicio" }); k = "fuera"; }
+  else if (enTaller) { items.push({ st: "bad", label: "En taller" + (enTaller.otNumero ? " (" + enTaller.otNumero + ")" : "") }); k = "fuera"; }
+  else if (fallaAlta) { items.push({ st: "bad", label: "Falla de severidad alta reportada" }); k = "fuera"; }
+  else if (agendado || fs.length) { items.push({ st: "warn", label: agendado ? "Mantención programada" : (fs.length + " falla(s) reportada(s)") }); k = "observacion"; }
+  else items.push({ st: "ok", label: "Camión operativo" });
+  if (!k) k = "operativo";
+  const ok = (k === "operativo");
 
   // Documentación
   let docVencido = null, docPorVencer = null;
@@ -91,7 +97,26 @@ export function truckAvailability(t, data, dayTs) {
   (t.mantenciones || []).forEach(pl => { const st = planStatus(pl, km); if (st.k === "vencida") mantVenc = mantVenc || pl.nombre; });
   if (mantVenc) items.push({ st: "warn", label: "Mantención preventiva vencida: " + mantVenc });
 
-  return { ok, items };
+  return { ok, k, items };
+}
+
+// Deriva las fallas abiertas (checklist + bitácora, menos las ligadas a
+// órdenes o descartadas). Mismo criterio que el panel, para disponibilidad.
+export function deriveFallas(checklists, bitacora, orders, resolved) {
+  const linked = new Set(); (orders || []).forEach(o => (o.sources || []).forEach(s => linked.add(s)));
+  const res = new Set(resolved || []);
+  const out = [];
+  (checklists || []).forEach(c => (c.fails || []).forEach(f => {
+    const id = "chk:" + c.id + ":" + f.k;
+    if (!linked.has(id) && !res.has(id)) out.push({ id, truckId: c.truckId, sev: f.sev || "media", ts: c.ts });
+  }));
+  (bitacora || []).forEach(b => {
+    if (b.tipo === "Falla mecánica" || b.tipo === "Incidente") {
+      const id = "bit:" + b.id;
+      if (!linked.has(id) && !res.has(id)) out.push({ id, truckId: b.truckId, sev: b.sev || "media", ts: b.ts });
+    }
+  });
+  return out;
 }
 
 // "HH:MM" -> minutos. Devuelve null si no es válido.

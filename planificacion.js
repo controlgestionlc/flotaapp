@@ -8,7 +8,7 @@ import {
   DIAS, DIAS_LARGO, weekInfo, dayKey, truckAvailability, driverAvailability,
   truckTimeClash, toMin, faenaAccess, PLAN_ESTADOS, IMPREVISTO_TIPOS,
   evaluarAccesoClima, CLIMA_PARAMS_DEFAULT, wmoDesc,
-  autoAssign, CRITERIOS, AUTO_PARAMS_DEFAULT, tripsPerTruck, capacidadViaje
+  autoAssign, CRITERIOS, AUTO_PARAMS_DEFAULT, tripsPerTruck, capacidadViaje, deriveFallas
 } from "./planning.js";
 import { fetchClimaFaenas, hasCoords, geocode } from "./clima.js";
 
@@ -59,11 +59,14 @@ async function loadWeek() {
 }
 
 async function loadRefs() {
-  const [trucks, faenas, users, orders, fuel, trips] = await Promise.all([
-    store.listTrucks(), store.listFaenas(), store.listUsers(), store.listOrders(), store.listFuel(), store.listTrips()
+  const [trucks, faenas, users, orders, fuel, trips, checklists, bitacora, resolved] = await Promise.all([
+    store.listTrucks(), store.listFaenas(), store.listUsers(), store.listOrders(), store.listFuel(), store.listTrips(),
+    store.listChecklists().catch(() => []), store.listBitacora().catch(() => []), store.listResolved().catch(() => [])
   ]);
   const conductores = users.filter(u => u.role === "conductor" && u.activo !== false);
-  return { trucks, faenas, conductores, orders, fuel, trips };
+  // Fallas abiertas para que la disponibilidad coincida con el panel.
+  const fallas = deriveFallas(checklists, bitacora, orders, resolved);
+  return { trucks, faenas, conductores, orders, fuel, trips, fallas };
 }
 
 function faColor(faenas, faenaId) {
@@ -87,7 +90,7 @@ async function semanal(view, ctx) {
   const volPlan = asigWeek.reduce((s, a) => s + (Number(a.volumenObjetivo) || 0), 0);
   const camionesPlan = new Set(asigWeek.map(a => a.camionId)).size;
   const faenasActivas = new Set(asigWeek.map(a => a.faenaId).filter(Boolean)).size;
-  const disp = activos.filter(t => truckAvailability(t, refs, weekTs).ok).length;
+  const disp = activos.filter(t => truckAvailability(t, refs, weekTs).k === "operativo").length;
 
   // Alertas: faenas no operativas con asignaciones + camiones no disponibles asignados.
   const alerts = [];
@@ -151,7 +154,7 @@ async function semanal(view, ctx) {
       return '<td><button class="pl-cell empty" data-cell="' + t.id + "|" + dk + '">' + (canEdit ? "Reserva" : "—") + "</button></td>";
     }).join("");
     return '<tr><td class="pl-th-fix"><div class="pl-truck"><span class="trucknum sm">' + esc(t.num) + "</span>" +
-      '<span><b>' + esc(t.patente) + "</b><small class='" + (av.ok ? "ok" : "bad") + "'>" + (av.ok ? "Disponible" : "No disponible") + "</small></span></div></td>" + cells + "</tr>";
+      '<span><b>' + esc(t.patente) + "</b><small class='" + (av.k === "operativo" ? "ok" : av.k === "observacion" ? "warn" : "bad") + "'>" + (av.k === "operativo" ? "Disponible" : av.k === "observacion" ? "Observación" : "No disponible") + "</small></span></div></td>" + cells + "</tr>";
   }).join("");
 
   const matriz = '<div class="pl-matrix-wrap section"><table class="pl-matrix"><thead><tr>' + head + "</tr></thead><tbody>" +
