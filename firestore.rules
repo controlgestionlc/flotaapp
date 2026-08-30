@@ -131,5 +131,11 @@ service cloud.firestore {
       allow create: if isActive();
       allow update, delete: if hasRole(['supervisor','administrador']);
     }
+
+    // Parámetros de planificación (umbrales de clima, reserva, etc.)
+    match /planconfig/{id} {
+      allow read: if isActive();
+      allow create, update, delete: if hasRole(['supervisor','administrador']);
+    }
   }
 }

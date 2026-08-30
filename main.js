@@ -115,7 +115,7 @@ async function routeTo(view) {
     if (!can(p, "reports.view")) { ctx.route = "home"; return renderPanel(view, ctx); }
     return renderReportes(view, ctx);
   }
-  if (r === "planificacion" || r === "faenas" || r === "operacion" || r === "control") {
+  if (r === "planificacion" || r === "faenas" || r === "operacion" || r === "control" || r === "clima" || r === "auto") {
     if (!can(p, "plan.view")) { ctx.route = "home"; return renderPanel(view, ctx); }
     return renderPlanificacion(view, ctx);
   }

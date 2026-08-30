@@ -144,6 +144,126 @@ export const PLAN_ESTADOS = {
   cerrado:      { l: "Cerrado", c: "ok" }
 };
 
+// ---------------------------------------------------------------
+//  Clima (parámetros editables + evaluación de riesgo de acceso)
+// ---------------------------------------------------------------
+
+// Umbrales por defecto. El clima NUNCA cierra una faena solo:
+// levanta un riesgo y el encargado confirma la condición.
+export const CLIMA_PARAMS_DEFAULT = { lluvia24Max: 10, vientoMax: 50, probMax: 70 };
+
+// Descripción del código WMO de Open-Meteo (resumido).
+export function wmoDesc(code) {
+  const c = Number(code);
+  if (c === 0) return { t: "Despejado", e: "☀️" };
+  if (c === 1 || c === 2) return { t: "Parcial", e: "🌤️" };
+  if (c === 3) return { t: "Nublado", e: "☁️" };
+  if (c >= 45 && c <= 48) return { t: "Niebla", e: "🌫️" };
+  if (c >= 51 && c <= 57) return { t: "Llovizna", e: "🌦️" };
+  if (c >= 61 && c <= 67) return { t: "Lluvia", e: "🌧️" };
+  if (c >= 71 && c <= 77) return { t: "Nieve", e: "🌨️" };
+  if (c >= 80 && c <= 82) return { t: "Chubascos", e: "🌧️" };
+  if (c >= 95) return { t: "Tormenta", e: "⛈️" };
+  return { t: "—", e: "🌡️" };
+}
+
+// Evalúa el riesgo de acceso a partir del clima y los parámetros.
+// Devuelve una SUGERENCIA (normal / condicionada); nunca "cerrada".
+export function evaluarAccesoClima(reading, params) {
+  const p = Object.assign({}, CLIMA_PARAMS_DEFAULT, params || {});
+  const motivos = [];
+  if (reading) {
+    if (reading.precip24 != null && reading.precip24 > p.lluvia24Max) motivos.push("Lluvia " + Math.round(reading.precip24) + " mm/24h (máx " + p.lluvia24Max + ")");
+    if (reading.windKmh != null && reading.windKmh > p.vientoMax) motivos.push("Viento " + Math.round(reading.windKmh) + " km/h (máx " + p.vientoMax + ")");
+    if (reading.probLluvia != null && reading.probLluvia > p.probMax) motivos.push("Prob. lluvia " + Math.round(reading.probLluvia) + "% (máx " + p.probMax + ")");
+  }
+  if (motivos.length) return { k: "condicionada", cls: "warn", label: "Condicionado", motivos };
+  return { k: "normal", cls: "ok", label: "Normal", motivos: [] };
+}
+
+// ---------------------------------------------------------------
+//  Motor de asignación automática (configurable)
+// ---------------------------------------------------------------
+
+export const AUTO_PARAMS_DEFAULT = { jornadaMin: 600, reservaMin: 1, criterio: "recomendada" };
+
+export const CRITERIOS = [
+  { k: "recomendada", n: "Planificación recomendada", d: "Equilibra objetivos, reserva y accesibilidad." },
+  { k: "produccion", n: "Maximizar producción", d: "Prioriza cumplir el objetivo de cada faena." },
+  { k: "tiempos_muertos", n: "Minimizar tiempos muertos", d: "Solo los camiones necesarios; evita esperas." },
+  { k: "utilizacion", n: "Maximizar utilización", d: "Usa todos los camiones disponibles." },
+  { k: "reserva", n: "Mantener camión de reserva", d: "Deja al menos N camiones de respaldo." },
+  { k: "equilibrio", n: "Equilibrar la flota", d: "Reparte la carga entre las faenas." }
+];
+
+// Viajes que alcanza un camión en la jornada según el tiempo de ciclo.
+export function tripsPerTruck(jornadaMin, cicloMin) {
+  const c = Number(cicloMin) || 0;
+  if (!c) return 5;
+  return Math.max(1, Math.floor((Number(jornadaMin) || 600) / c));
+}
+
+// Motor puro. trucks: [{id,num,available}], faenas: [{id,nombre,objetivoDia,tiempoCiclo,accesoK}]
+// opts: { jornadaMin, reservaMin, criterio }. Devuelve propuesta + resumen + advertencias.
+export function autoAssign(trucks, faenas, opts) {
+  const o = Object.assign({}, AUTO_PARAMS_DEFAULT, opts || {});
+  const avail = (trucks || []).filter(t => t.available);
+  const N = avail.length;
+  const usable = (faenas || []).filter(f => f.accesoK !== "cerrada" && Number(f.objetivoDia) > 0);
+
+  const order = usable.slice();
+  if (o.criterio === "recomendada") order.sort((a, b) => ((a.accesoK === "condicionada" ? 1 : 0) - (b.accesoK === "condicionada" ? 1 : 0)) || (b.objetivoDia - a.objetivoDia));
+  else order.sort((a, b) => b.objetivoDia - a.objetivoDia);
+
+  // Solo el criterio "reserva" retiene camiones antes de cubrir producción;
+  // en los demás, primero se cumple el objetivo y lo que sobra queda de reserva.
+  const reserveTarget = (o.criterio === "reserva") ? Math.max(0, Number(o.reservaMin) || 0) : 0;
+  const cap = Math.max(0, N - reserveTarget);
+
+  const req = {}, alloc = {};
+  order.forEach(f => { req[f.id] = Math.max(1, Math.ceil(f.objetivoDia / tripsPerTruck(o.jornadaMin, f.tiempoCiclo))); alloc[f.id] = 0; });
+
+  // Paso 1: cubrir lo requerido por faena (hasta cap).
+  let used = 0;
+  for (const f of order) { if (used >= cap) break; const need = Math.min(req[f.id], cap - used); alloc[f.id] += need; used += need; }
+
+  // Paso 2: repartir camiones sobrantes (solo para maximizar utilización o equilibrar).
+  if (o.criterio === "utilizacion" || o.criterio === "equilibrio") {
+    let guard = 0;
+    while (used < cap && guard++ < 100) {
+      let placed = false;
+      for (const f of order) {
+        if (used >= cap) break;
+        if (o.criterio === "utilizacion" || alloc[f.id] < req[f.id] * 2) { alloc[f.id]++; used++; placed = true; }
+      }
+      if (!placed) break;
+    }
+  }
+
+  // Construir propuesta y repartir viajes entre los camiones de cada faena.
+  let ti = 0; const proposal = []; const resumen = [];
+  for (const f of order) {
+    const tpt = tripsPerTruck(o.jornadaMin, f.tiempoCiclo);
+    const k = alloc[f.id]; let obj = f.objetivoDia; let vsum = 0;
+    for (let i = 0; i < k && ti < avail.length; i++) {
+      const truck = avail[ti++];
+      const share = Math.max(0, Math.min(tpt, Math.ceil(obj / (k - i))));
+      obj -= share; vsum += share;
+      proposal.push({ camionId: truck.id, faenaId: f.id, viajes: share });
+    }
+    resumen.push({ faenaId: f.id, nombre: f.nombre, trucks: k, viajes: vsum, objetivo: f.objetivoDia, cumpl: f.objetivoDia ? Math.round(vsum / f.objetivoDia * 100) : 0, accesoK: f.accesoK });
+  }
+  const reserva = avail.slice(ti).map(t => t.id);
+
+  const warnings = [];
+  if (!reserva.length) warnings.push("Sin camión de reserva.");
+  resumen.forEach(r => { if (r.cumpl < 100) warnings.push(r.nombre + " no alcanza el objetivo (" + r.cumpl + "%)."); });
+  resumen.forEach(r => { if (r.accesoK === "condicionada") warnings.push(r.nombre + " tiene acceso condicionado."); });
+  (faenas || []).forEach(f => { if (f.accesoK === "cerrada") warnings.push(f.nombre + " está cerrada: no se asignó."); });
+
+  return { proposal, reserva, resumen, warnings, disponibles: N };
+}
+
 export const IMPREVISTO_TIPOS = [
   { k: "clima", n: "Clima" },
   { k: "camino", n: "Camino / acceso" },

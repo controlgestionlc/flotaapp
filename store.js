@@ -95,8 +95,8 @@ function demoAdapter() {
 
     // --- Planificación de flota (demo) ---
     const faenas = [
-      { id: "fa1", nombre: "Faena A", ubicacion: "Fundo El Roble", comuna: "Angol", tipoMadera: "Pino aserrable", destino: "Aserradero Mininco", distancia: 48, tiempoCiclo: 120, capacidadDia: 20, estadoAcceso: "operativa", restricciones: "", activa: true, createdAt: now },
-      { id: "fa2", nombre: "Faena B", ubicacion: "Predio Santa Ana", comuna: "Collipulli", tipoMadera: "Eucalipto pulpable", destino: "Planta Collipulli", distancia: 62, tiempoCiclo: 150, capacidadDia: 16, estadoAcceso: "condicionada", restricciones: "Camino de tierra, intransitable con lluvia fuerte.", activa: true, createdAt: now }
+      { id: "fa1", nombre: "Faena A", ubicacion: "Fundo El Roble", comuna: "Angol", lat: -37.7955, lng: -72.7025, tipoMadera: "Pino aserrable", destino: "Aserradero Mininco", distancia: 48, tiempoCiclo: 120, capacidadDia: 20, objetivoDia: 10, estadoAcceso: "operativa", restricciones: "", activa: true, createdAt: now },
+      { id: "fa2", nombre: "Faena B", ubicacion: "Predio Santa Ana", comuna: "Collipulli", lat: -37.9558, lng: -72.4344, tipoMadera: "Eucalipto pulpable", destino: "Planta Collipulli", distancia: 62, tiempoCiclo: 150, capacidadDia: 16, objetivoDia: 5, estadoAcceso: "condicionada", restricciones: "Camino de tierra, intransitable con lluvia fuerte.", activa: true, createdAt: now }
     ];
     // Semana actual (lunes a domingo) con claves de día YYYY-MM-DD.
     const monday = (() => { const d = new Date(now); d.setHours(0,0,0,0); d.setDate(d.getDate() - ((d.getDay()+6)%7)); return d.getTime(); })();
@@ -390,6 +390,11 @@ export const store = {
   async listFaenas() { return (await A.list("faenas")).sort((a, b) => (a.nombre || "").localeCompare(b.nombre || "")); },
   async getFaena(id) { return A.get("faenas", id); },
   async saveFaena(id, data) { if (id) { await A.set("faenas", id, data); return id; } return A.add("faenas", data); },
+  async saveFaenaClima(id, clima) { return A.update("faenas", id, { clima }); },
+
+  // --- parámetros de planificación (clima, reserva, etc.) ---
+  async getPlanConfig(id) { try { return await A.get("planconfig", id); } catch (e) { return null; } },
+  async savePlanConfig(id, data) { return A.set("planconfig", id, Object.assign({ id }, data)); },
 
   // --- planificación semanal ---
   async listPlans() { return (await A.list("plans")).sort((a, b) => (b.inicio || 0) - (a.inicio || 0)); },

@@ -6,11 +6,17 @@ import {
 } from "./ui.js";
 import {
   DIAS, DIAS_LARGO, weekInfo, dayKey, truckAvailability, driverAvailability,
-  truckTimeClash, toMin, faenaAccess, PLAN_ESTADOS, IMPREVISTO_TIPOS
+  truckTimeClash, toMin, faenaAccess, PLAN_ESTADOS, IMPREVISTO_TIPOS,
+  evaluarAccesoClima, CLIMA_PARAMS_DEFAULT, wmoDesc,
+  autoAssign, CRITERIOS, AUTO_PARAMS_DEFAULT, tripsPerTruck
 } from "./planning.js";
+import { fetchClimaFaenas, hasCoords } from "./clima.js";
 
 // Timestamp dentro de la semana visualizada (se ajusta con la navegación).
 let weekTs = null;
+// Estado de la última asignación automática generada (opciones + propuesta).
+let autoState = null;
+function minToHHMM(m) { const h = Math.floor(m / 60) % 24, mm = m % 60; return String(h).padStart(2, "0") + ":" + String(mm).padStart(2, "0"); }
 // Paleta estable para identificar faenas en la matriz.
 const FA_COLORS = ["#2F6F5E", "#B4632A", "#3B5B92", "#7A5B99", "#8A7A2E", "#9A3B4E"];
 
@@ -20,6 +26,8 @@ export async function renderPlanificacion(view, ctx) {
   if (r === "faenas") return faenasScreen(view, ctx);
   if (r === "operacion") return operacionDia(view, ctx);
   if (r === "control") return controlScreen(view, ctx);
+  if (r === "clima") return climaScreen(view, ctx);
+  if (r === "auto") return autoScreen(view, ctx);
   return semanal(view, ctx);
 }
 
@@ -129,7 +137,8 @@ async function semanal(view, ctx) {
     (canEdit ? '<button class="btn sm btn-soft" id="pl-obj" style="align-self:center">Editar objetivo</button>' : "") + "</div>";
 
   const acciones = canEdit ? '<div class="section" style="display:flex;gap:10px;flex-wrap:wrap">' +
-    (plan.estado === "borrador" || plan._nuevo ? '<button class="btn btn-primary" id="pl-aprobar" style="flex:1;min-width:150px">' + I.check + "Aprobar programa</button>" : "") +
+    '<button class="btn btn-primary" id="pl-auto" style="flex:1;min-width:150px">' + I.route + "Asignación automática</button>" +
+    (plan.estado === "borrador" || plan._nuevo ? '<button class="btn btn-steel" id="pl-aprobar" style="flex:1;min-width:150px">' + I.check + "Aprobar programa</button>" : "") +
     '<button class="btn btn-steel" id="pl-reprog" style="flex:1;min-width:150px">' + I.wrench + "Reprogramar</button>" +
     "</div>" : "";
 
@@ -142,6 +151,7 @@ async function semanal(view, ctx) {
     '<div class="section" style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn sm btn-ghost" id="pl-hoy">HOY</button>' +
       '<button class="btn sm btn-ghost" id="pl-oper">' + I.truck + "Operación de hoy</button>" +
       '<button class="btn sm btn-ghost" id="pl-ctrl">' + I.chart + "Plan vs. real</button>" +
+      '<button class="btn sm btn-ghost" id="pl-clima">' + I.alert + "Clima</button>" +
       (can(ctx.profile, "plan.manage") ? '<button class="btn sm btn-ghost" id="pl-faenas">' + I.pin + "Faenas</button>" : "") + "</div>" +
     kpis + acciones + matriz + alertsBlock + objetivo +
     '<p class="meta-line" style="font-size:.78rem;margin:14px 2px 4px">Camión, conductor, documentación y mantención se consultan desde el sistema; aquí solo se distribuyen los recursos.</p>';
@@ -152,6 +162,7 @@ async function semanal(view, ctx) {
   $("#pl-hoy", view).onclick = () => { weekTs = Date.now(); renderPlanificacion(view, ctx); };
   $("#pl-oper", view).onclick = () => ctx.go("operacion", {});
   $("#pl-ctrl", view).onclick = () => ctx.go("control", {});
+  $("#pl-clima", view).onclick = () => ctx.go("clima", {});
   const bf = $("#pl-faenas", view); if (bf) bf.onclick = () => ctx.go("faenas", {});
   if (canEdit) {
     $$("[data-cell]", view).forEach(b => b.onclick = () => {
@@ -161,6 +172,7 @@ async function semanal(view, ctx) {
     const ob = $("#pl-obj", view); if (ob) ob.onclick = () => editObjetivo(view, ctx, plan);
     const ap = $("#pl-aprobar", view); if (ap) ap.onclick = () => aprobarPlan(view, ctx, plan);
     const rp = $("#pl-reprog", view); if (rp) rp.onclick = () => reprogramar(view, ctx, plan, refs);
+    const au = $("#pl-auto", view); if (au) au.onclick = () => ctx.go("auto", {});
   } else {
     $$("[data-cell]", view).forEach(b => b.onclick = () => verDay(ctx, plan, refs, b.getAttribute("data-cell")));
   }
@@ -421,10 +433,12 @@ async function operacionDia(view, ctx) {
     '<p class="meta-line" style="margin:-4px 2px 14px">' + esc(DIAS_LARGO[new Date(hoy).getDay() === 0 ? 6 : new Date(hoy).getDay() - 1] + " " + fmtDate(hoy)) + "</p>" +
     cards +
     '<div class="section" style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn btn-primary" id="op-imprev" style="flex:1;min-width:150px">' + I.alert + "Reportar imprevisto</button>" +
+    '<button class="btn btn-soft" id="op-clima" style="flex:1;min-width:150px">' + I.alert + "Clima</button>" +
     (canEdit ? '<button class="btn btn-steel" id="op-reprog" style="flex:1;min-width:150px">' + I.wrench + "Reprogramar</button>" : "") + "</div>";
 
   $("#op-back", view).onclick = () => ctx.go("planificacion", {});
   $("#op-imprev", view).onclick = () => reportarImprevisto(view, ctx, refs);
+  $("#op-clima", view).onclick = () => ctx.go("clima", {});
   const rp = $("#op-reprog", view); if (rp) rp.onclick = () => { weekTs = Date.now(); loadWeek().then(({ plan }) => reprogramar(view, ctx, plan, refs)); };
 }
 
@@ -515,6 +529,214 @@ async function controlScreen(view, ctx) {
 }
 
 // =============================================================
+//  CLIMA · consulta por georreferencia (Open-Meteo) + parámetros
+// =============================================================
+async function climaScreen(view, ctx) {
+  const canEdit = can(ctx.profile, "plan.manage");
+  const [faenas, pc] = await Promise.all([store.listFaenas(), store.getPlanConfig("clima")]);
+  const params = Object.assign({}, CLIMA_PARAMS_DEFAULT, pc || {});
+  const activas = faenas.filter(f => f.activa !== false);
+
+  const num = (v, u) => v == null ? "s/d" : (Math.round(v * 10) / 10) + (u || "");
+  const cards = activas.length ? activas.map(f => {
+    const r = f.clima || null;
+    const ac = faenaAccess(f);            // condición operacional actual (manual)
+    const sug = evaluarAccesoClima(r, params); // sugerencia según clima
+    const w = r && r.code != null ? wmoDesc(r.code) : { t: "Sin datos", e: "🌡️" };
+    const body = r
+      ? '<div style="display:flex;gap:16px;flex-wrap:wrap;margin:10px 0 6px">' +
+          '<div><div class="meta-line" style="font-size:.74rem">Estado</div><div style="font-weight:600">' + w.e + " " + esc(w.t) + "</div></div>" +
+          '<div><div class="meta-line" style="font-size:.74rem">Temp.</div><div class="num" style="font-weight:600">' + num(r.tempC, " °C") + "</div></div>" +
+          '<div><div class="meta-line" style="font-size:.74rem">Lluvia 24h</div><div class="num" style="font-weight:600">' + num(r.precip24, " mm") + "</div></div>" +
+          '<div><div class="meta-line" style="font-size:.74rem">Viento</div><div class="num" style="font-weight:600">' + num(r.windKmh, " km/h") + "</div></div>" +
+          '<div><div class="meta-line" style="font-size:.74rem">Prob. lluvia</div><div class="num" style="font-weight:600">' + num(r.probLluvia, "%") + "</div></div>" +
+        "</div>" +
+        '<div class="meta-line" style="font-size:.76rem">Actualizado ' + fmtDateTime(r.ts) + "</div>"
+      : '<p class="meta-line" style="margin:8px 0">' + (hasCoords(f) ? "Sin datos aún. Pulsa Actualizar clima." : "Falta cargar las coordenadas de esta faena.") + "</p>";
+    const motivos = sug.motivos.length ? '<div class="meta-line" style="font-size:.78rem;margin-top:4px">' + esc(sug.motivos.join(" · ")) + "</div>" : "";
+    const sugEstado = sug.k === "normal" ? "operativa" : sug.k;
+    const aplicar = (canEdit && r && sugEstado !== ac.k) ? '<button class="btn sm btn-soft" data-aplicar="' + f.id + "|" + sug.k + '" style="margin-top:10px">Aplicar “' + esc(sug.label) + '” a la faena</button>' : "";
+    return '<div class="card pad section"><div class="subhead" style="margin:0"><h2 style="font-size:1.05rem">' + esc(f.nombre) + "</h2>" +
+      '<span class="pill ' + ac.cls + '"><span class="dot"></span>' + ac.label + "</span></div>" +
+      '<div class="meta-line" style="font-size:.8rem">' + esc([f.ubicacion, f.comuna].filter(Boolean).join(", ")) + (hasCoords(f) ? "" : " · sin coordenadas") + "</div>" +
+      body +
+      '<div style="display:flex;align-items:center;gap:8px;margin-top:8px"><span class="meta-line" style="font-size:.78rem">Acceso estimado por clima:</span><span class="pill ' + sug.cls + '"><span class="dot"></span>' + sug.label + "</span></div>" +
+      motivos + aplicar + "</div>";
+  }).join("") : '<div class="card pad section">' + emptyBox("No hay faenas registradas") + "</div>";
+
+  view.innerHTML =
+    '<button class="backlink" id="cl-back">' + I.back + " Planificación</button>" +
+    '<div class="subhead"><h2>Condiciones meteorológicas</h2></div>' +
+    '<p class="meta-line" style="margin:-4px 2px 12px;font-size:.82rem">El clima es una señal de riesgo: sugiere el acceso, pero la condición de la faena la confirma el encargado.</p>' +
+    '<div class="section" style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn btn-primary" id="cl-update" style="flex:1;min-width:160px">' + I.download + "Actualizar clima</button>" +
+    (canEdit ? '<button class="btn btn-soft" id="cl-params" style="flex:1;min-width:140px">' + I.gear + "Parámetros</button>" : "") + "</div>" +
+    '<div class="meta-line" style="font-size:.76rem;margin:0 2px 8px">Umbrales: lluvia > ' + params.lluvia24Max + " mm/24h · viento > " + params.vientoMax + " km/h · prob. lluvia > " + params.probMax + "%</div>" +
+    cards;
+
+  $("#cl-back", view).onclick = () => ctx.go("planificacion", {});
+  const up = $("#cl-update", view);
+  up.onclick = async () => {
+    up.disabled = true; up.textContent = "Consultando...";
+    try {
+      const res = await fetchClimaFaenas(activas);
+      let okN = 0, failN = 0;
+      for (const f of activas) {
+        const r = res[f.id];
+        if (r && r.ok) { await store.saveFaenaClima(f.id, r.reading); okN++; }
+        else if (hasCoords(f)) failN++;
+      }
+      toast(okN ? "Clima actualizado (" + okN + " faena" + (okN > 1 ? "s" : "") + ")" : "No se pudo actualizar el clima", okN ? "ok" : "err");
+      climaScreen(view, ctx);
+    } catch (e) { toast("No se pudo actualizar: " + (e.message || e), "err"); up.disabled = false; up.textContent = "Actualizar clima"; }
+  };
+  const pb = $("#cl-params", view); if (pb) pb.onclick = () => climaParams(view, ctx, params);
+  $$("[data-aplicar]", view).forEach(b => b.onclick = () => {
+    const [fid, k] = b.getAttribute("data-aplicar").split("|");
+    aplicarAcceso(view, ctx, fid, k);
+  });
+}
+
+function climaParams(view, ctx, params) {
+  openSheet("Parámetros de clima",
+    '<p class="meta-line" style="margin:0 0 12px;font-size:.82rem">Umbrales que levantan una alerta de acceso condicionado. No cierran la faena; solo la sugieren.</p>' +
+    '<label class="fld"><span class="lb">Lluvia máxima (mm en 24h)</span><input class="input num" id="cp-lluvia" inputmode="decimal" value="' + esc(params.lluvia24Max) + '"></label>' +
+    '<label class="fld"><span class="lb">Viento máximo (km/h)</span><input class="input num" id="cp-viento" inputmode="decimal" value="' + esc(params.vientoMax) + '"></label>' +
+    '<label class="fld"><span class="lb">Probabilidad de lluvia máxima (%)</span><input class="input num" id="cp-prob" inputmode="numeric" value="' + esc(params.probMax) + '"></label>' +
+    '<button class="btn btn-primary" id="cp-ok" style="width:100%">' + I.check + "Guardar parámetros</button>",
+    () => {
+      $("#cp-ok").onclick = async () => {
+        const p = {
+          lluvia24Max: Number($("#cp-lluvia").value) || 0,
+          vientoMax: Number($("#cp-viento").value) || 0,
+          probMax: Number($("#cp-prob").value) || 0
+        };
+        try { await store.savePlanConfig("clima", p); closeSheet(); toast("Parámetros guardados", "ok"); climaScreen(view, ctx); }
+        catch (e) { toast("No se pudo guardar: " + (e.message || e), "err"); }
+      };
+    });
+}
+
+// Aplica (con confirmación manual) la condición sugerida a la faena.
+function aplicarAcceso(view, ctx, faenaId, k) {
+  const label = k === "cerrada" ? "Cerrada" : k === "condicionada" ? "Condicionada" : "Operativa";
+  openSheet("Confirmar condición",
+    '<p class="meta-line" style="margin:0 0 14px">Vas a fijar el acceso de la faena en <b style="color:var(--ink)">' + esc(label) + "</b>. Esta es una decisión operacional; el clima es solo una referencia.</p>" +
+    '<button class="btn btn-primary" id="ap-ok" style="width:100%">' + I.check + "Confirmar " + esc(label) + "</button>",
+    () => {
+      $("#ap-ok").onclick = async () => {
+        try {
+          const f = await store.getFaena(faenaId); if (!f) return;
+          f.estadoAcceso = k === "normal" ? "operativa" : k;
+          await store.saveFaena(faenaId, f);
+          closeSheet(); toast("Condición de la faena actualizada", "ok"); climaScreen(view, ctx);
+        } catch (e) { toast("No se pudo aplicar: " + (e.message || e), "err"); }
+      };
+    });
+}
+
+// =============================================================
+//  ASIGNACIÓN AUTOMÁTICA (motor configurable + propuesta)
+// =============================================================
+async function autoScreen(view, ctx) {
+  if (!can(ctx.profile, "plan.manage")) return semanal(view, ctx);
+  const { wk, plan } = await loadWeek();
+  const refs = await loadRefs();
+  const { trucks, faenas, conductores } = refs;
+  const activos = trucks.filter(t => t.activo !== false);
+  const activas = faenas.filter(f => f.activa !== false);
+  const pc = await store.getPlanConfig("auto");
+  const params = Object.assign({}, AUTO_PARAMS_DEFAULT, pc || {});
+
+  // Estado de opciones (persistente entre generar/aprobar).
+  if (!autoState || autoState.week !== wk.key) {
+    autoState = { week: wk.key, criterio: params.criterio, reservaMin: params.reservaMin, jornadaMin: params.jornadaMin,
+      dias: wk.dias.slice(0, 5).map(dayKey), proposal: null };
+  }
+  const st = autoState;
+
+  const critOpts = CRITERIOS.map(c => '<button class="tile' + (st.criterio === c.k ? " sel" : "") + '" data-crit="' + c.k + '"><span class="tx"><b>' + esc(c.n) + "</b><span>" + esc(c.d) + "</span></span>" + (st.criterio === c.k ? I.check : "") + "</button>").join("");
+  const diaChips = wk.dias.slice(0, 5).map((ts, i) => { const dk = dayKey(ts); const on = st.dias.indexOf(dk) >= 0;
+    return '<button class="chip' + (on ? " on" : "") + '" data-dia="' + dk + '">' + DIAS[i] + " " + new Date(ts).getDate() + "</button>"; }).join("");
+
+  let proposalBlock = "";
+  if (st.proposal) {
+    const pr = st.proposal;
+    const faName2 = id => { const f = faenas.find(x => x.id === id); return f ? f.nombre : "—"; };
+    const truckNum = id => { const t = trucks.find(x => x.id === id); return t ? t.num : "?"; };
+    const resumen = pr.resumen.map(r => '<div class="row"><span class="sev-stripe ' + (r.cumpl >= 100 ? "sev-baja" : "sev-media") + '"></span><div class="rl"><div class="t">' + esc(r.nombre) +
+      ' <span class="pill ' + (r.cumpl >= 100 ? "ok" : "warn") + '">' + r.cumpl + "%</span></div><div class='m'><span>" + r.trucks + " camión(es)</span><span>" + r.viajes + " / " + r.objetivo + " viajes</span></div></div></div>").join("");
+    const detalle = pr.proposal.map(p => '<div class="row"><span class="trucknum sm">' + esc(truckNum(p.camionId)) + '</span><div class="rl"><div class="t">' + esc(faName2(p.faenaId)) +
+      ' <span class="pill neutral">' + p.viajes + ' v.</span></div><div class="m"><span>' + esc(p.conductorId ? (conductores.find(c => c.uid === p.conductorId) || {}).nombre || "" : "Sin conductor") + "</span></div></div></div>").join("");
+    const reservaTxt = pr.reserva.length ? pr.reserva.map(truckNum).join(", ") : "Ninguno";
+    const warns = pr.warnings.length ? '<div class="card pad section" style="border-color:var(--warn)"><span class="eyebrow" style="display:block;margin-bottom:6px">Advertencias</span>' +
+      pr.warnings.map(w => '<div style="display:flex;gap:8px;padding:2px 0;font-size:.86rem">⚠️ <span>' + esc(w) + "</span></div>").join("") + "</div>" : "";
+    proposalBlock =
+      '<div class="section"><span class="eyebrow">Propuesta</span>' +
+      '<div class="card" style="margin-top:8px">' + resumen +
+        '<div class="row"><span class="sev-stripe sev-baja" style="background:var(--steel)"></span><div class="rl"><div class="t">Reserva</div><div class="m"><span>' + esc(reservaTxt) + "</span></div></div></div></div></div>" +
+      '<div class="section"><span class="eyebrow">Detalle por camión</span><div class="card" style="margin-top:8px">' + detalle + "</div></div>" +
+      warns +
+      '<div class="formbar"><button class="btn btn-primary" id="au-aprobar">' + I.check + "Aprobar y aplicar a " + st.dias.length + " día(s)</button></div>";
+  }
+
+  view.innerHTML =
+    '<button class="backlink" id="au-back">' + I.back + " Planificación</button>" +
+    '<div class="subhead"><h2>Asignación automática</h2><span class="pill steel">Semana ' + wk.num + "</span></div>" +
+    '<p class="meta-line" style="margin:-4px 2px 12px;font-size:.82rem">El sistema propone la distribución; tú la revisas y apruebas. Considera disponibilidad, objetivos, tiempos de ciclo y acceso de cada faena.</p>' +
+    '<div class="section"><span class="eyebrow">Tipo de planificación</span><div class="tiles" style="margin-top:8px">' + critOpts + "</div></div>" +
+    '<div class="card pad section"><div class="grid2"><label class="fld" style="margin:0"><span class="lb">Camiones de reserva</span><input class="input num" id="au-reserva" inputmode="numeric" value="' + esc(st.reservaMin) + '"></label>' +
+      '<label class="fld" style="margin:0"><span class="lb">Jornada (horas)</span><input class="input num" id="au-jornada" inputmode="decimal" value="' + esc(Math.round(st.jornadaMin / 60 * 10) / 10) + '"></label></div>' +
+      '<label class="fld" style="margin:14px 0 0"><span class="lb">Días a programar</span><div class="chips" id="au-dias">' + diaChips + "</div></label></div>" +
+    '<div class="section"><button class="btn btn-steel" id="au-gen" style="width:100%">' + I.route + "Generar propuesta</button></div>" +
+    proposalBlock;
+
+  $("#au-back", view).onclick = () => { autoState = null; ctx.go("planificacion", {}); };
+  $$("[data-crit]", view).forEach(b => b.onclick = () => { st.criterio = b.getAttribute("data-crit"); st.proposal = null; autoScreen(view, ctx); });
+  $$("[data-dia]", view).forEach(b => b.onclick = () => { const dk = b.getAttribute("data-dia"); const i = st.dias.indexOf(dk); if (i >= 0) st.dias.splice(i, 1); else st.dias.push(dk); autoScreen(view, ctx); });
+  const rv = $("#au-reserva", view); if (rv) rv.oninput = () => { st.reservaMin = Math.max(0, Number(rv.value) || 0); };
+  const jr = $("#au-jornada", view); if (jr) jr.oninput = () => { st.jornadaMin = Math.max(60, Math.round((Number(jr.value) || 10) * 60)); };
+
+  $("#au-gen", view).onclick = async () => {
+    if (!st.dias.length) { toast("Elige al menos un día", "err"); return; }
+    // Guarda los parámetros para la próxima vez.
+    try { await store.savePlanConfig("auto", { criterio: st.criterio, reservaMin: st.reservaMin, jornadaMin: st.jornadaMin }); } catch (e) {}
+    const truckInputs = activos.map(t => ({ id: t.id, num: t.num, available: truckAvailability(t, refs, weekTs).ok }));
+    const faenaInputs = activas.map(f => ({ id: f.id, nombre: f.nombre, objetivoDia: Number(f.objetivoDia) || 0, tiempoCiclo: Number(f.tiempoCiclo) || 0, accesoK: faenaAccess(f).k }));
+    const res = autoAssign(truckInputs, faenaInputs, { jornadaMin: st.jornadaMin, reservaMin: st.reservaMin, criterio: st.criterio });
+    // Asigna conductores distintos (round-robin sin repetir el mismo día).
+    res.proposal.forEach((p, i) => { p.conductorId = conductores[i] ? conductores[i].uid : ""; });
+    if (res.proposal.some(p => !p.conductorId)) res.warnings.push("Faltan conductores para todos los camiones.");
+    if (!faenaInputs.some(f => f.objetivoDia > 0)) { toast("Define el objetivo diario de las faenas primero", "err"); return; }
+    st.proposal = res;
+    autoScreen(view, ctx);
+  };
+
+  const ap = $("#au-aprobar", view);
+  if (ap) ap.onclick = async () => {
+    const pr = st.proposal; if (!pr) return;
+    if (plan.estado === "planificado" && !plan.original) plan.original = JSON.parse(JSON.stringify(plan.asignaciones));
+    const ini = "07:00", fin = minToHHMM(7 * 60 + st.jornadaMin);
+    // Reemplaza las asignaciones de los días elegidos por la propuesta.
+    plan.asignaciones = (plan.asignaciones || []).filter(a => st.dias.indexOf(a.fecha) < 0);
+    st.dias.forEach(dk => {
+      pr.proposal.forEach(p => {
+        plan.asignaciones.push({ id: uid("as"), camionId: p.camionId, fecha: dk, conductorId: p.conductorId || "",
+          faenaId: p.faenaId, turnoInicio: ini, turnoFin: fin, viajesObjetivo: p.viajes, volumenObjetivo: 0,
+          estado: "planificado", auto: true });
+      });
+    });
+    plan.estado = plan.estado === "borrador" || plan._nuevo ? "borrador" : "modificado";
+    const btn = $("#au-aprobar", view); btn.disabled = true; btn.textContent = "Aplicando...";
+    try {
+      await persistPlan(plan);
+      autoState = null;
+      toast("Programa generado y aplicado", "ok");
+      ctx.go("planificacion", {});
+    } catch (e) { toast("No se pudo aplicar: " + (e.message || e), "err"); btn.disabled = false; btn.textContent = "Aprobar y aplicar"; }
+  };
+}
+
+// =============================================================
 //  Catálogo de FAENAS
 // =============================================================
 async function faenasScreen(view, ctx) {
@@ -539,8 +761,9 @@ async function faenasScreen(view, ctx) {
 async function faenaForm(view, ctx, id) {
   const f = id ? (await store.getFaena(id)) || {} : {};
   const d = {
-    nombre: f.nombre || "", ubicacion: f.ubicacion || "", comuna: f.comuna || "", tipoMadera: f.tipoMadera || "", destino: f.destino || "",
-    distancia: f.distancia || "", tiempoCiclo: f.tiempoCiclo || "", capacidadDia: f.capacidadDia || "",
+    nombre: f.nombre || "", ubicacion: f.ubicacion || "", comuna: f.comuna || "", lat: f.lat != null ? f.lat : "", lng: f.lng != null ? f.lng : "",
+    tipoMadera: f.tipoMadera || "", destino: f.destino || "",
+    distancia: f.distancia || "", tiempoCiclo: f.tiempoCiclo || "", capacidadDia: f.capacidadDia || "", objetivoDia: f.objetivoDia || "",
     estadoAcceso: f.estadoAcceso || "operativa", restricciones: f.restricciones || "", activa: f.activa !== false
   };
   const accChip = (k, l, cls) => '<button class="chip ' + (d.estadoAcceso === k ? "on" : "") + '" data-acc="' + k + '">' + l + "</button>";
@@ -551,11 +774,15 @@ async function faenaForm(view, ctx, id) {
       '<label class="fld"><span class="lb">Nombre</span><input class="input" id="ff-nombre" value="' + esc(d.nombre) + '"></label>' +
       '<div class="grid2"><label class="fld"><span class="lb">Ubicación</span><input class="input" id="ff-ubi" value="' + esc(d.ubicacion) + '"></label>' +
       '<label class="fld"><span class="lb">Comuna</span><input class="input" id="ff-comuna" value="' + esc(d.comuna) + '"></label></div>' +
+      '<div class="grid2"><label class="fld"><span class="lb">Latitud</span><input class="input num" id="ff-lat" inputmode="decimal" placeholder="-37.7955" value="' + esc(d.lat) + '"></label>' +
+      '<label class="fld"><span class="lb">Longitud</span><input class="input num" id="ff-lng" inputmode="decimal" placeholder="-72.7025" value="' + esc(d.lng) + '"></label></div>' +
+      '<p class="meta-line" style="font-size:.76rem;margin:-4px 2px 12px">Coordenadas para consultar el clima. Puedes copiarlas desde Google Maps (clic derecho sobre el punto).</p>' +
       '<div class="grid2"><label class="fld"><span class="lb">Tipo de madera</span><input class="input" id="ff-mad" value="' + esc(d.tipoMadera) + '"></label>' +
       '<label class="fld"><span class="lb">Destino</span><input class="input" id="ff-dest" value="' + esc(d.destino) + '"></label></div>' +
       '<div class="grid2"><label class="fld"><span class="lb">Distancia (km)</span><input class="input num" id="ff-dist" inputmode="numeric" value="' + esc(d.distancia) + '"></label>' +
       '<label class="fld"><span class="lb">Tiempo ciclo (min)</span><input class="input num" id="ff-ciclo" inputmode="numeric" value="' + esc(d.tiempoCiclo) + '"></label></div>' +
-      '<label class="fld"><span class="lb">Capacidad (viajes/día)</span><input class="input num" id="ff-cap" inputmode="numeric" value="' + esc(d.capacidadDia) + '"></label>' +
+      '<div class="grid2"><label class="fld"><span class="lb">Objetivo diario (viajes)</span><input class="input num" id="ff-obj" inputmode="numeric" value="' + esc(d.objetivoDia) + '"></label>' +
+      '<label class="fld"><span class="lb">Capacidad (viajes/día)</span><input class="input num" id="ff-cap" inputmode="numeric" value="' + esc(d.capacidadDia) + '"></label></div>' +
       '<label class="fld"><span class="lb">Estado de acceso</span><div class="chips" id="ff-acc">' + accChip("operativa", "Operativa") + accChip("condicionada", "Condicionada") + accChip("cerrada", "Cerrada") + "</div></label>" +
       '<label class="fld" style="margin-bottom:0"><span class="lb">Restricciones / observación</span><textarea class="input" id="ff-restr" placeholder="Ej: camino de tierra, intransitable con lluvia">' + esc(d.restricciones) + "</textarea></label>" +
     "</div>" +
@@ -564,11 +791,14 @@ async function faenaForm(view, ctx, id) {
   $$("#ff-acc [data-acc]", view).forEach(b => b.onclick = () => { d.estadoAcceso = b.getAttribute("data-acc"); $$("#ff-acc [data-acc]", view).forEach(x => x.classList.remove("on")); b.classList.add("on"); });
   $("#ff-save", view).onclick = async () => {
     const g = i => { const el = $(i, view); return el ? el.value : ""; };
+    const parseCoord = v => { const n = Number(String(v).trim()); return isFinite(n) && String(v).trim() !== "" ? n : null; };
     const rec = {
-      nombre: g("#ff-nombre").trim(), ubicacion: g("#ff-ubi").trim(), comuna: g("#ff-comuna").trim(), tipoMadera: g("#ff-mad").trim(), destino: g("#ff-dest").trim(),
-      distancia: Number(g("#ff-dist")) || 0, tiempoCiclo: Number(g("#ff-ciclo")) || 0, capacidadDia: Number(g("#ff-cap")) || 0,
+      nombre: g("#ff-nombre").trim(), ubicacion: g("#ff-ubi").trim(), comuna: g("#ff-comuna").trim(),
+      lat: parseCoord(g("#ff-lat")), lng: parseCoord(g("#ff-lng")),
+      tipoMadera: g("#ff-mad").trim(), destino: g("#ff-dest").trim(),
+      distancia: Number(g("#ff-dist")) || 0, tiempoCiclo: Number(g("#ff-ciclo")) || 0, capacidadDia: Number(g("#ff-cap")) || 0, objetivoDia: Number(g("#ff-obj")) || 0,
       estadoAcceso: d.estadoAcceso, restricciones: g("#ff-restr").trim(), activa: true,
-      createdAt: f.createdAt || Date.now()
+      clima: f.clima || null, createdAt: f.createdAt || Date.now()
     };
     if (!rec.nombre) { toast("Indica el nombre de la faena", "err"); return; }
     const btn = $("#ff-save", view); btn.disabled = true; btn.textContent = "Guardando...";
