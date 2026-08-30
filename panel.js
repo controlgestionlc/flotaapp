@@ -277,7 +277,9 @@ async function availSheet(ctx, truckId, trucks, orders, fallas) {
   } catch (e) { /* la planificación es complementaria */ }
 
   if (a.k === "operativo") {
-    body += '<p class="meta-line">Operativo, sin novedades pendientes. Disponible para operar.</p>';
+    body += '<p class="meta-line" style="margin-bottom:10px">Operativo, sin novedades pendientes. Disponible para operar.</p>';
+    if (can(ctx.profile, "order.manage"))
+      body += '<button class="btn btn-soft" id="av-gen">' + I.wrench + "Generar orden de taller</button>";
   } else if (a.order) {
     const o = a.order, estim = Number(o.costoEstimado) || 0;
     body += '<div class="card pad" style="box-shadow:none;border-color:var(--line)">' +
@@ -301,6 +303,8 @@ async function availSheet(ctx, truckId, trucks, orders, fallas) {
       body += '<button class="btn btn-primary" style="margin-top:14px" id="av-crear">' + I.wrench + "Crear orden de taller</button>";
   }
 
+  if (can(ctx.profile, "truck.manage"))
+    body += '<button class="btn btn-soft" style="margin-top:10px" id="av-assign">' + I.users + "Asignar chofer" + (t.conductorNombre ? " · " + esc(t.conductorNombre) : "") + "</button>";
   if (can(ctx.profile, "order.manage"))
     body += '<button class="btn btn-soft" style="margin-top:10px;color:var(--crit)" id="av-falla">' + I.alert + "Reportar falla / marcar no disponible</button>";
   body += '<button class="btn btn-soft" style="margin-top:10px" id="av-resumen">' + I.chart + "Ver resumen del camión</button>";
@@ -308,6 +312,8 @@ async function availSheet(ctx, truckId, trucks, orders, fallas) {
   openSheet("Disponibilidad · " + t.num, body, () => {
     const bo = $("#av-order"); if (bo) bo.onclick = () => { closeSheet(); orderDraft = null; ctx.go("order", { id: a.order.id }); };
     const bc = $("#av-crear"); if (bc) bc.onclick = () => { const fs = fallas.filter(f => f.truckId === truckId); closeSheet(); createOrder(ctx, fs[0].id, fallas); };
+    const bg = $("#av-gen"); if (bg) bg.onclick = () => { closeSheet(); createOrder(ctx, null, fallas, truckId); };
+    const ba = $("#av-assign"); if (ba) ba.onclick = () => { closeSheet(); asignarChofer(ctx, t); };
     const bfa = $("#av-falla"); if (bfa) bfa.onclick = () => { closeSheet(); reportarFallaAdmin(ctx, truckId, t.num); };
     const bw = $("#av-week"); if (bw) bw.onclick = () => { closeSheet(); openTruckWeek(ctx, truckId, Date.now()); };
     const br = $("#av-resumen"); if (br) br.onclick = () => { closeSheet(); ctx.go("resumen", { id: truckId, from: "home" }); };
@@ -350,23 +356,79 @@ function reportarFallaAdmin(ctx, truckId, truckNum) {
     });
 }
 
-async function createOrder(ctx, fid, fallas) {
-  const f = fallas.find(x => x.id === fid); if (!f) return;
-  let otNumero = "";
-  try {
-    const all = await store.listOrders();
-    const yr = new Date().getFullYear();
-    const seq = all.filter(o => o.otNumero && o.otNumero.indexOf("OT-" + yr + "-") === 0).length + 1;
-    otNumero = "OT-" + yr + "-" + String(seq).padStart(4, "0");
-  } catch (e) { otNumero = "OT-" + new Date().getFullYear() + "-" + String(Date.now()).slice(-4); }
-  const o = {
-    truckId: f.truckId, otNumero, titulo: f.titulo.length > 46 ? f.titulo.slice(0, 46) + "..." : f.titulo, detalle: f.detalle,
-    sources: [fid], reportadoPor: f.driver, estado: "agendado", taller: "", fechaAgendada: null,
-    costoEstimado: 0, fechaEntregaEstimada: null,
-    trabajo: "", repuestos: [], manoObra: 0, createdBy: ctx.profile.uid, createdAt: Date.now(), completedAt: null
-  };
-  try { await store.saveOrder(null, o); toast("Orden creada: " + otNumero, "ok"); ctx.go("home", {}); }
-  catch (e) { toast("No se pudo crear: " + (e.message || e), "err"); }
+// Ventana de creación de orden de taller. Se abre desde una falla (prefill) o
+// como orden nueva (truckId directo). Permite ingresar todos los datos antes de
+// crear la orden; luego navega al detalle para seguir gestionándola.
+function createOrder(ctx, fid, fallas, truckId) {
+  const f = fid ? (fallas || []).find(x => x.id === fid) : null;
+  const tId = f ? f.truckId : truckId;
+  if (!tId) return;
+  const st = { estado: "agendado" };
+  const estados = [["pendiente", "Pendiente"], ["agendado", "Agendado"], ["en_taller", "En taller"]];
+  const estChips = estados.map(s => '<button class="chip' + (st.estado === s[0] ? " on" : "") + '" data-oe="' + s[0] + '">' + s[1] + "</button>").join("");
+  openSheet("Nueva orden de taller",
+    (f ? '<p class="meta-line" style="margin:0 0 12px;font-size:.82rem">Basada en la falla reportada' + (f.driver ? " por " + esc(f.driver) : "") + ". Puedes ajustar los datos.</p>" : "") +
+    '<label class="fld"><span class="lb">Problema / título</span><input class="input" id="no-tit" placeholder="Ej: Cambio de pastillas de freno" value="' + esc(f ? f.titulo : "") + '"></label>' +
+    '<label class="fld"><span class="lb">Detalle</span><textarea class="input" id="no-det" placeholder="Describe el trabajo requerido...">' + esc(f ? (f.detalle || "") : "") + "</textarea></label>" +
+    '<label class="fld"><span class="lb">Estado inicial</span><div class="chips" id="no-est">' + estChips + "</div></label>" +
+    '<label class="fld"><span class="lb">Taller</span><input class="input" id="no-taller" placeholder="Nombre del taller"></label>' +
+    '<label class="fld"><span class="lb">Fecha agendada</span><input class="input" type="date" id="no-fecha"></label>' +
+    '<label class="fld"><span class="lb">Costo estimado</span><input class="input num" id="no-estim" inputmode="numeric" placeholder="$"></label>' +
+    '<label class="fld"><span class="lb">Fecha estimada de entrega</span><input class="input" type="date" id="no-entrega"></label>' +
+    '<p class="meta-line" style="font-size:.78rem;margin:0 0 12px">Estado <b>En taller</b> deja el camión fuera de servicio.</p>' +
+    '<button class="btn btn-primary" id="no-ok" style="width:100%">' + I.check + "Crear orden</button>",
+    () => {
+      $$("#no-est [data-oe]").forEach(b => b.onclick = () => { st.estado = b.getAttribute("data-oe"); $$("#no-est [data-oe]").forEach(x => x.classList.remove("on")); b.classList.add("on"); });
+      $("#no-ok").onclick = async () => {
+        const titulo = ($("#no-tit").value || "").trim();
+        if (!titulo) { toast("Escribe el problema o título", "err"); return; }
+        let otNumero = "";
+        try {
+          const all = await store.listOrders();
+          const yr = new Date().getFullYear();
+          const seq = all.filter(o => o.otNumero && o.otNumero.indexOf("OT-" + yr + "-") === 0).length + 1;
+          otNumero = "OT-" + yr + "-" + String(seq).padStart(4, "0");
+        } catch (e) { otNumero = "OT-" + new Date().getFullYear() + "-" + String(Date.now()).slice(-4); }
+        const fecha = $("#no-fecha").value, entrega = $("#no-entrega").value;
+        const o = {
+          truckId: tId, otNumero, titulo, detalle: ($("#no-det").value || "").trim(),
+          sources: f ? [fid] : [], reportadoPor: f ? f.driver : ctx.profile.nombre,
+          estado: st.estado, taller: ($("#no-taller").value || "").trim(),
+          fechaAgendada: fecha ? new Date(fecha + "T12:00:00").getTime() : null,
+          costoEstimado: Math.round(Number($("#no-estim").value) || 0),
+          fechaEntregaEstimada: entrega ? new Date(entrega + "T12:00:00").getTime() : null,
+          trabajo: "", repuestos: [], manoObra: 0, createdBy: ctx.profile.uid, createdAt: Date.now(), completedAt: null
+        };
+        const btn = $("#no-ok"); btn.disabled = true; btn.textContent = "Creando...";
+        try { const id = await store.saveOrder(null, o); orderDraft = null; closeSheet(); toast("Orden creada: " + otNumero, "ok"); ctx.go("order", { id }); }
+        catch (e) { toast("No se pudo crear: " + (e.message || e), "err"); btn.disabled = false; btn.textContent = "Crear orden"; }
+      };
+    });
+}
+
+// Asignar o cambiar el chofer de un camión desde el panel (supervisor/admin).
+async function asignarChofer(ctx, t) {
+  let conductores = [];
+  try { conductores = (await store.listUsers()).filter(u => u.role === "conductor" && u.activo !== false); }
+  catch (e) { toast("No se pudo cargar la lista de conductores", "err"); return; }
+  const st = { uid: t.conductorUid || "" };
+  const opts = '<option value="">Sin asignar</option>' + conductores.map(u =>
+    '<option value="' + esc(u.uid) + '"' + (st.uid === u.uid ? " selected" : "") + ">" + esc(u.nombre || u.email) + "</option>").join("");
+  openSheet("Asignar chofer · " + t.num,
+    '<p class="meta-line" style="margin:0 0 12px;font-size:.82rem">Solo el chofer asignado podrá seleccionar este camión al iniciar su turno. Si su camión queda en taller, podrá tomar un camión de reserva.</p>' +
+    '<label class="fld"><span class="lb">Conductor asignado</span><select class="input" id="ac-sel">' + opts + "</select></label>" +
+    '<button class="btn btn-primary" id="ac-ok" style="width:100%">' + I.check + "Guardar asignación</button>",
+    () => {
+      const sel = $("#ac-sel"); if (sel) sel.onchange = () => { st.uid = sel.value; };
+      $("#ac-ok").onclick = async () => {
+        const cond = conductores.find(u => u.uid === st.uid);
+        const btn = $("#ac-ok"); btn.disabled = true; btn.textContent = "Guardando...";
+        try {
+          await store.saveTruck(t.id, Object.assign({}, t, { conductorUid: cond ? cond.uid : null, conductorNombre: cond ? (cond.nombre || cond.email) : null }));
+          closeSheet(); toast(cond ? "Chofer asignado: " + (cond.nombre || cond.email) : "Camión sin chofer asignado", "ok"); ctx.go("home", {});
+        } catch (e) { toast("No se pudo guardar: " + (e.message || e), "err"); btn.disabled = false; btn.textContent = "Guardar asignación"; }
+      };
+    });
 }
 function resolveFalla(ctx, fid, fallas) {
   const f = (fallas || []).find(x => x.id === fid);

@@ -51,24 +51,37 @@ async function pickTruck(view, ctx, trucks) {
   const myUid = ctx.profile.uid;
 
   const activos = trucks.filter(t => t.activo !== false);
-  const tengoAsignado = activos.some(t => t.conductorUid === myUid);
+  const myTruck = activos.find(t => t.conductorUid === myUid);
+  // "Desplazado": mi camión asignado está fuera de servicio (en taller). En ese
+  // caso quedo disponible para tomar un camión de reserva (sin chofer asignado).
+  const desplazado = !!myTruck && truckAvailability(myTruck, data, now).k !== "operativo";
   const opts = activos.map(t => {
     const av = truckAvailability(t, data, now);
     const st = pickStatus(av);
     const mine = t.conductorUid === myUid;
-    const selectable = mine && av.k === "operativo";
+    const libre = !t.conductorUid;
+    const op = av.k === "operativo";
+    const selectable = op && (mine || (desplazado && libre));
     let msg = "";
-    if (!mine) msg = "Este camión no está asignado a ti. Solo puedes usar el que te asignó tu supervisor.";
-    else if (av.k !== "operativo") msg = "Tu camión no está disponible en este momento. Consulta con tu supervisor.";
+    if (!selectable) {
+      if (mine) msg = "Tu camión no está disponible en este momento. Consulta con tu supervisor.";
+      else if (!libre) msg = "Este camión está asignado a otro chofer.";
+      else if (!op) msg = "Camión de reserva no disponible en este momento.";
+      else if (!desplazado) msg = "Camión de reserva. Solo puedes tomarlo si tu camión asignado está en taller.";
+      else msg = "Camión no disponible.";
+    }
     const attr = selectable ? 'data-pick="' + t.id + '"' : 'data-nope="' + t.id + '" data-msg="' + esc(msg) + '" aria-disabled="true"';
-    const badge = mine ? '<span style="font-family:Barlow Semi Condensed;font-weight:600;font-size:.68rem;color:var(--accent);text-transform:uppercase;letter-spacing:.04em">Tu camión</span>' : "";
+    const badgeTxt = mine ? "Tu camión" : (libre ? "Reserva" : "");
+    const badge = badgeTxt ? '<span style="font-family:Barlow Semi Condensed;font-weight:600;font-size:.68rem;color:var(--accent);text-transform:uppercase;letter-spacing:.04em">' + badgeTxt + "</span>" : "";
     return '<button class="tile' + (mine ? " tile-mine" : "") + (selectable ? "" : " tile-off") + '" ' + attr + '><span class="trucknum">' + esc(t.num) + "</span>" +
       '<span class="tx"><b>' + esc(t.marca + " " + (t.modelo || "")) + "</b><span>" + esc(t.patente) + "</span></span>" +
       '<span style="display:flex;flex-direction:column;gap:4px;align-items:flex-end"><span class="pill ' + st.cls + '"><span class="dot"></span>' + st.label + "</span>" + badge + "</span></button>";
   }).join("");
-  const intro = tengoAsignado
-    ? "Selecciona tu camión para iniciar el turno. Puedes ver el estado de los demás, pero solo puedes usar el que te asignó tu supervisor."
-    : "Aún no tienes un camión asignado. Contacta a tu supervisor para que te asigne uno antes de operar.";
+  const intro = !myTruck
+    ? "Aún no tienes un camión asignado. Contacta a tu supervisor para que te asigne uno antes de operar."
+    : desplazado
+      ? "Tu camión asignado no está disponible. Puedes tomar un camión de reserva (sin chofer asignado) que esté operativo, o consulta con tu supervisor."
+      : "Selecciona tu camión para iniciar el turno. Puedes ver el estado de los demás, pero solo puedes usar el que te asignó tu supervisor.";
   view.innerHTML =
     '<section class="section" style="margin-top:6px"><span class="eyebrow">Paso 1 · Inicio de turno</span>' +
     '<h1 style="font-size:1.5rem;margin:6px 0 6px">Hola, ' + esc(ctx.profile.nombre.split(" ")[0]) + "</h1>" +
