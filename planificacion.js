@@ -715,16 +715,18 @@ async function autoScreen(view, ctx) {
   const activas = faenas.filter(f => f.activa !== false);
   const pc = await store.getPlanConfig("auto");
   const params = Object.assign({}, AUTO_PARAMS_DEFAULT, pc || {});
+  // Días a mostrar = el máximo de días de operación entre las faenas (6 = Lun-Sáb).
+  const maxDias = Math.min(7, Math.max(1, ...activas.map(f => Number(f.diasSemana) || 6), 6));
 
   // Estado de opciones (persistente entre generar/aprobar).
   if (!autoState || autoState.week !== wk.key) {
     autoState = { week: wk.key, criterio: params.criterio, reservaMin: params.reservaMin, jornadaMin: params.jornadaMin,
-      capMR: params.capMR, capM3: params.capM3, ajustarFaltante: false, dias: wk.dias.slice(0, 5).map(dayKey), proposal: null };
+      capMR: params.capMR, capM3: params.capM3, ajustarFaltante: false, dias: wk.dias.slice(0, maxDias).map(dayKey), proposal: null };
   }
   const st = autoState;
 
   const critOpts = CRITERIOS.map(c => '<button class="tile' + (st.criterio === c.k ? " sel" : "") + '" data-crit="' + c.k + '"><span class="tx"><b>' + esc(c.n) + "</b><span>" + esc(c.d) + "</span></span>" + (st.criterio === c.k ? I.check : "") + "</button>").join("");
-  const diaChips = wk.dias.slice(0, 5).map((ts, i) => { const dk = dayKey(ts); const on = st.dias.indexOf(dk) >= 0;
+  const diaChips = wk.dias.slice(0, maxDias).map((ts, i) => { const dk = dayKey(ts); const on = st.dias.indexOf(dk) >= 0;
     return '<button class="chip' + (on ? " on" : "") + '" data-dia="' + dk + '">' + DIAS[i] + " " + new Date(ts).getDate() + "</button>"; }).join("");
 
   let proposalBlock = "";
@@ -776,13 +778,16 @@ async function autoScreen(view, ctx) {
     // Guarda los parámetros para la próxima vez.
     try { await store.savePlanConfig("auto", { criterio: st.criterio, reservaMin: st.reservaMin, jornadaMin: st.jornadaMin, capMR: st.capMR, capM3: st.capM3 }); } catch (e) {}
     const truckInputs = activos.map(t => ({ id: t.id, num: t.num, available: truckAvailability(t, refs, weekTs).ok }));
+    const wkKeys = wk.dias.map(dayKey);
+    // Días elegidos en los que opera cada faena (según sus días de operación).
+    const diasDeFaena = f => st.dias.filter(dk => { const i = wkKeys.indexOf(dk); return i >= 0 && i < (Number(f.diasSemana) || 6); });
     const faenaInputs = activas.map(f => {
       const capV = capacidadViaje(f.unidad, { capMR: st.capMR, capM3: st.capM3 });
       let metrosDia = metrosDiaFaena(f);
-      // Modo reprogramación: apunta al faltante repartido en los días elegidos.
+      // Modo reprogramación: apunta al faltante repartido en los días de operación restantes.
       if (st.ajustarFaltante && (Number(f.metrosSemana) || 0) > 0) {
         const restante = Math.max(0, (Number(f.metrosSemana) || 0) - despachoSemana(f, refs.trips, wk));
-        metrosDia = Math.round(restante / Math.max(1, st.dias.length));
+        metrosDia = Math.round(restante / Math.max(1, diasDeFaena(f).length));
       }
       // Objetivo diario en viajes: derivado de los metros/capacidad, o el manual.
       const objVia = metrosDia > 0 ? Math.ceil(metrosDia / capV) : (Number(f.objetivoDia) || 0);
@@ -802,10 +807,15 @@ async function autoScreen(view, ctx) {
     const pr = st.proposal; if (!pr) return;
     if (plan.estado === "planificado" && !plan.original) plan.original = JSON.parse(JSON.stringify(plan.asignaciones));
     const ini = "07:00", fin = minToHHMM(7 * 60 + st.jornadaMin);
+    const wkKeys2 = wk.dias.map(dayKey);
+    const diasFaena = fid => { const f = faenas.find(x => x.id === fid); return Number(f && f.diasSemana) || 6; };
     // Reemplaza las asignaciones de los días elegidos por la propuesta.
     plan.asignaciones = (plan.asignaciones || []).filter(a => st.dias.indexOf(a.fecha) < 0);
     st.dias.forEach(dk => {
+      const idx = wkKeys2.indexOf(dk);
       pr.proposal.forEach(p => {
+        // Solo programa la faena en los días en que opera (ej. 6 días = Lun-Sáb).
+        if (idx >= 0 && idx >= diasFaena(p.faenaId)) return;
         plan.asignaciones.push({ id: uid("as"), camionId: p.camionId, fecha: dk, conductorId: p.conductorId || "",
           faenaId: p.faenaId, turnoInicio: ini, turnoFin: fin, viajesObjetivo: p.viajes, volumenObjetivo: p.volumen || 0,
           estado: "planificado", auto: true });
