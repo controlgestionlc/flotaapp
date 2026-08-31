@@ -1,7 +1,24 @@
 import { store } from "./store.js";
 import { can } from "./permissions.js";
 import { DOC_TYPES } from "./checklist.js";
-import { I, esc, fmtDate, docStatus, emptyBox, toast, $, $$ } from "./ui.js";
+import { truckAvailability, deriveFallas } from "./planning.js";
+import { I, esc, fmtDate, fmtDateTime, docStatus, iconSpan, emptyBox, toast, $, $$ } from "./ui.js";
+
+// Semáforo operativo (mismo criterio del panel).
+function availPill(k) {
+  if (k === "operativo") return { cls: "ok", label: "Operativo" };
+  if (k === "observacion") return { cls: "warn", label: "Observación" };
+  return { cls: "crit", label: "No disponible" };
+}
+// Fallas por gestionar de un camión, con título/origen (para el detalle).
+function fallasDe(truckId, cks, bits, orders, resolved) {
+  const linked = new Set(); (orders || []).forEach(o => (o.sources || []).forEach(s => linked.add(s)));
+  const res = new Set(resolved || []);
+  const out = [];
+  (cks || []).forEach(c => { if (c.truckId !== truckId) return; (c.fails || []).forEach(f => { const id = "chk:" + c.id + ":" + f.k; if (!linked.has(id) && !res.has(id)) out.push({ titulo: f.n, origen: "Checklist", sev: f.sev || "media", ts: c.ts, detalle: f.note || "" }); }); });
+  (bits || []).forEach(b => { if (b.truckId !== truckId) return; if (b.tipo === "Falla mecánica" || b.tipo === "Incidente") { const id = "bit:" + b.id; if (!linked.has(id) && !res.has(id)) out.push({ titulo: b.tipo + ": " + (b.desc || "").slice(0, 44), origen: "Bitácora", sev: b.sev || "media", ts: b.ts, detalle: b.desc || "" }); } });
+  return out.sort((a, b) => b.ts - a.ts);
+}
 
 let form = null;
 
@@ -22,14 +39,25 @@ function worstDoc(t) {
 }
 
 async function list(view, ctx) {
-  const trucks = await store.listTrucks();
+  const [trucks, orders, fuel, cks, bits, resolved] = await Promise.all([
+    store.listTrucks(), store.listOrders().catch(() => []), store.listFuel().catch(() => []),
+    store.listChecklists().catch(() => []), store.listBitacora().catch(() => []), store.listResolved().catch(() => [])
+  ]);
+  const fallas = deriveFallas(cks, bits, orders, resolved);
+  const refs = { orders, fuel, fallas };
   const manage = can(ctx.profile, "truck.manage");
   const rows = trucks.length ? trucks.map(t => {
+    const av = truckAvailability(t, refs, Date.now());
+    const ap = availPill(av.k);
     const w = worstDoc(t);
+    const nF = fallas.filter(f => f.truckId === t.id).length;
     return '<div class="row" data-truck="' + t.id + '" style="cursor:pointer"><span class="trucknum">' + esc(t.num) + "</span>" +
       '<div class="rl"><div class="t">' + esc(t.marca + " " + (t.modelo || "")) + ' <span class="plate" style="font-size:.78rem;padding:2px 7px">' + esc(t.patente) + "</span></div>" +
-      '<div class="m"><span>' + (t.anio ? "Año " + t.anio : "") + "</span>" + (t.activo === false ? '<span style="color:var(--muted)">Inactivo</span>' : "") + "</div></div>" +
-      '<span class="pill ' + w.cls + '"><span class="dot"></span>' + w.label + "</span></div>";
+      '<div class="m"><span>' + (t.anio ? "Año " + t.anio : "") + "</span>" +
+      '<span class="' + (w.cls === "ok" ? "" : "") + '" style="color:' + (w.cls === "ok" ? "var(--muted)" : "var(--crit)") + '">' + esc(w.label) + "</span>" +
+      (nF ? '<span style="color:var(--crit)">' + nF + " falla" + (nF > 1 ? "s" : "") + " por gestionar</span>" : "") +
+      (t.activo === false ? '<span style="color:var(--muted)">Inactivo</span>' : "") + "</div></div>" +
+      '<span class="pill ' + ap.cls + '"><span class="dot"></span>' + ap.label + "</span></div>";
   }).join("") : emptyBox("No hay camiones registrados");
 
   view.innerHTML =
@@ -47,6 +75,38 @@ async function truckDetail(view, ctx) {
   const t = await store.getTruck(ctx.params.id);
   if (!t) return list(view, ctx);
   const manage = can(ctx.profile, "truck.manage");
+  const [orders, fuel, cks, bits, resolved] = await Promise.all([
+    store.listOrders().catch(() => []), store.listFuel().catch(() => []),
+    store.listChecklists().catch(() => []), store.listBitacora().catch(() => []), store.listResolved().catch(() => [])
+  ]);
+  const fallas = deriveFallas(cks, bits, orders, resolved);
+  const av = truckAvailability(t, { orders, fuel, fallas }, Date.now());
+  const ap = availPill(av.k);
+  const fList = fallasDe(t.id, cks, bits, orders, resolved);
+  const sevPill = { alta: "crit", media: "warn", baja: "neutral" };
+  const dotColor = st => st === "bad" ? "var(--crit)" : st === "warn" ? "var(--warn)" : "var(--ok)";
+
+  // Estado operativo (semáforo + detalle de items).
+  const estadoCard = '<div class="section"><span class="eyebrow">Estado operativo</span>' +
+    '<div class="card pad" style="margin-top:8px">' +
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><span class="pill ' + ap.cls + '"><span class="dot"></span>' + ap.label + "</span></div>" +
+    av.items.map(it => '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:.88rem">' +
+      '<span style="width:9px;height:9px;border-radius:50%;flex:none;background:' + dotColor(it.st) + '"></span>' + esc(it.label) + "</div>").join("") +
+    "</div></div>";
+
+  // Fallas por gestionar de este camión.
+  const fallasCard = '<div class="section"><span class="eyebrow">Fallas por gestionar' + (fList.length ? " (" + fList.length + ")" : "") + '</span>' +
+    '<div class="card" style="margin-top:8px">' +
+    (fList.length ? fList.map(f => '<div class="row"><span class="sev-stripe sev-' + f.sev + '"></span><div class="rl">' +
+      '<div class="t">' + esc(f.titulo) + ' <span class="pill ' + sevPill[f.sev] + '">' + ({ alta: "Alta", media: "Media", baja: "Baja" }[f.sev]) + "</span></div>" +
+      '<div class="m"><span>' + esc(f.origen) + "</span><span>" + fmtDateTime(f.ts) + "</span></div>" +
+      (f.detalle ? '<div style="font-size:.85rem;margin-top:3px;color:var(--ink-2)">' + esc(f.detalle) + "</div>" : "") +
+      "</div></div>").join("")
+      : '<div class="empty">' + I.check + "<div>Sin fallas pendientes para este camión.</div></div>") +
+    "</div>" +
+    (manage && (av.k !== "operativo" || fList.length) ? '<div class="meta-line" style="font-size:.78rem;margin-top:6px">Gestiona órdenes de taller y el descarte de fallas desde el panel principal.</div>' : "") +
+    "</div>";
+
   const docRow = (nombre, numero, vence) => {
     const st = docStatus(vence);
     return '<div class="doc-row"><div class="dl"><div class="dn">' + esc(nombre) + "</div>" +
@@ -62,8 +122,10 @@ async function truckDetail(view, ctx) {
     '<div style="flex:1"><div style="font-family:Barlow Semi Condensed;font-weight:700;font-size:1.2rem">' + esc(t.marca + " " + (t.modelo || "")) + "</div>" +
     '<div style="margin-top:5px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="plate">' + esc(t.patente) + "</span>" +
     (t.anio ? '<span class="meta-line">Año ' + t.anio + "</span>" : "") +
-    '<span class="pill ' + (t.activo === false ? "neutral" : "ok") + '"><span class="dot"></span>' + (t.activo === false ? "Inactivo" : "Activo") + "</span></div>" +
+    '<span class="pill ' + ap.cls + '"><span class="dot"></span>' + ap.label + "</span>" +
+    (t.activo === false ? '<span class="pill neutral"><span class="dot"></span>Inactivo</span>' : "") + "</div>" +
     '<div class="meta-line" style="margin-top:8px;display:flex;align-items:center;gap:6px"><span style="display:inline-flex;width:15px;height:15px;color:var(--muted)">' + I.users + "</span>Conductor: <b style=\"color:var(--ink)\">" + esc(t.conductorNombre || "Sin asignar") + "</b></div></div></div></div>" +
+    estadoCard + fallasCard +
     '<div class="section"><span class="eyebrow">Documentación</span><div class="card pad" style="margin-top:8px">' + docs + "</div></div>" +
     '<button class="btn btn-soft section" id="td-resumen">' + I.chart + "Ver resumen operativo</button>" +
     (manage ? '<button class="btn btn-soft section" id="td-mant">' + I.wrench + "Pauta de mantención</button>" : "") +
