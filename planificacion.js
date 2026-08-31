@@ -10,12 +10,15 @@ import {
   evaluarAccesoClima, CLIMA_PARAMS_DEFAULT, wmoDesc,
   autoAssign, CRITERIOS, AUTO_PARAMS_DEFAULT, tripsPerTruck, capacidadViaje, deriveFallas
 } from "./planning.js";
-import { fetchClimaFaenas, hasCoords, geocode } from "./clima.js";
+import { fetchClimaFaenas, hasCoords, geocode, fetchFaenaHistorial, histStart, histEnd, HIST_START } from "./clima.js";
 
 // Timestamp dentro de la semana visualizada (se ajusta con la navegación).
 let weekTs = null;
 // Estado de la última asignación automática generada (opciones + propuesta).
 let autoState = null;
+// Faena seleccionada en el historial de clima + bandera de carga en curso.
+let climaHistSel = null;
+let climaHistBusy = false;
 function minToHHMM(m) { const h = Math.floor(m / 60) % 24, mm = m % 60; return String(h).padStart(2, "0") + ":" + String(mm).padStart(2, "0"); }
 // Objetivo diario de metros de una faena = semanal ÷ días de operación.
 function metrosDiaFaena(f) {
@@ -41,8 +44,150 @@ export async function renderPlanificacion(view, ctx) {
   if (r === "operacion") return operacionDia(view, ctx);
   if (r === "control") return controlScreen(view, ctx);
   if (r === "clima") return climaScreen(view, ctx);
+  if (r === "climahist") return climaHistScreen(view, ctx);
   if (r === "auto") return autoScreen(view, ctx);
   return semanal(view, ctx);
+}
+
+// Descarga el histórico de una faena (desde HIST_START) y lo fusiona con lo
+// guardado. Persiste en la faena si el usuario tiene permiso de escritura.
+async function syncFaenaHist(f, canWrite) {
+  if (!hasCoords(f)) return { ok: false, error: "Sin coordenadas" };
+  const endISO = histEnd();
+  const dias = await fetchFaenaHistorial(f, histStart(), endISO);
+  const prev = (f.climaHist && f.climaHist.dias) ? Object.assign({}, f.climaHist.dias) : {};
+  dias.forEach(d => { prev[d.fecha] = d; });
+  const climaHist = { dias: prev, lastSync: Date.now(), lastFecha: endISO };
+  f.climaHist = climaHist; // refleja en memoria de inmediato
+  if (canWrite) { try { await store.patchFaena(f.id, { climaHist }); } catch (e) { /* sin permiso: queda solo en memoria */ } }
+  return { ok: true, climaHist, count: dias.length };
+}
+
+// Sincronización automática una vez al día (se llama al abrir el panel).
+// Guardado por día/dispositivo para no repetir descargas.
+export async function autoSyncClimaHistBg(profile) {
+  try {
+    if (!can(profile, "plan.manage")) return; // solo quien puede escribir persiste
+    const hoy = dayKey(Date.now());
+    let last = null; try { last = localStorage.getItem("bf_climahist_day"); } catch (e) {}
+    if (last === hoy) return; // ya corrió hoy en este dispositivo
+    const faenas = (await store.listFaenas()).filter(hasCoords);
+    for (const f of faenas) {
+      const lf = f.climaHist && f.climaHist.lastFecha;
+      if (lf === histEnd()) continue; // ya está al día
+      try { await syncFaenaHist(f, true); } catch (e) { /* continúa con las demás */ }
+    }
+    try { localStorage.setItem("bf_climahist_day", hoy); } catch (e) {}
+  } catch (e) { /* la sincronización automática es best-effort */ }
+}
+
+// =============================================================
+//  PANTALLA · Historial de clima por faena y por día
+// =============================================================
+async function climaHistScreen(view, ctx) {
+  const canWrite = can(ctx.profile, "plan.manage");
+  const faenas = await store.listFaenas();
+  const conCoords = faenas.filter(hasCoords);
+  if (climaHistSel == null || !conCoords.some(f => f.id === climaHistSel)) {
+    climaHistSel = conCoords.length ? conCoords[0].id : null;
+  }
+  const f = faenas.find(x => x.id === climaHistSel) || null;
+
+  // Catch-up automático al abrir: si la faena no está al día, la actualiza.
+  if (f && hasCoords(f) && !climaHistBusy) {
+    const lf = f.climaHist && f.climaHist.lastFecha;
+    if (lf !== histEnd()) {
+      climaHistBusy = true;
+      syncFaenaHist(f, canWrite).catch(() => {}).finally(() => { climaHistBusy = false; renderPlanificacion(view, ctx); });
+    }
+  }
+
+  const selChips = conCoords.map(x =>
+    '<button class="chip' + (x.id === climaHistSel ? " on" : "") + '" data-fh="' + x.id + '">' + esc(x.nombre) + "</button>").join("");
+
+  let tabla = "";
+  if (!f) {
+    tabla = emptyBox("No hay faenas con coordenadas. Agrega ubicación en Faenas para consultar el clima.");
+  } else if (!f.climaHist || !f.climaHist.dias || !Object.keys(f.climaHist.dias).length) {
+    tabla = '<div class="empty">' + I.alert + "<div>" + (climaHistBusy ? "Cargando historial…" : "Sin datos aún. Toca “Actualizar historial”.") + "</div></div>";
+  } else {
+    const dias = Object.values(f.climaHist.dias).filter(d => d.fecha >= HIST_START).sort((a, b) => b.fecha.localeCompare(a.fecha));
+    const rows = dias.map(d => {
+      const dt = new Date(d.fecha + "T12:00:00");
+      const dl = DIAS_LARGO[(dt.getDay() + 6) % 7].slice(0, 3);
+      const w = wmoDesc(d.code);
+      const lluvia = d.precip24 != null ? d.precip24.toFixed(1) + " mm" : "—";
+      const riesgo = (d.precip24 != null && d.precip24 >= 20) || (d.windKmh != null && d.windKmh >= 40);
+      return "<tr" + (riesgo ? ' style="background:var(--surface-2)"' : "") + "><td>" + esc(dl + " " + dt.getDate() + "/" + (dt.getMonth() + 1)) + "</td>" +
+        '<td class="r"><b' + (riesgo ? ' style="color:var(--crit)"' : "") + ">" + lluvia + "</b></td>" +
+        '<td class="r">' + (d.windKmh != null ? Math.round(d.windKmh) + "" : "—") + "</td>" +
+        '<td class="r">' + (d.tmin != null ? Math.round(d.tmin) + "°" : "—") + " / " + (d.tmax != null ? Math.round(d.tmax) + "°" : "—") + "</td>" +
+        "<td>" + esc(w || "—") + "</td></tr>";
+    }).join("");
+    const totLluvia = dias.reduce((s, d) => s + (Number(d.precip24) || 0), 0);
+    tabla = '<div style="overflow-x:auto"><table class="wd-table"><thead><tr><th>Día</th><th class="r">Lluvia</th><th class="r">Viento km/h</th><th class="r">Mín/Máx</th><th>Condición</th></tr></thead><tbody>' +
+      rows + "</tbody></table></div>" +
+      '<div class="wd-tot"><span>' + dias.length + " días · desde " + fmtDate(new Date(HIST_START + "T12:00:00").getTime()) + "</span><b>Lluvia acumulada: " + totLluvia.toFixed(1) + " mm</b></div>";
+  }
+
+  const sub = f && f.climaHist && f.climaHist.lastSync
+    ? "Última actualización: " + fmtDateTime(f.climaHist.lastSync)
+    : "Fuente: Open-Meteo · datos diarios";
+
+  view.innerHTML =
+    '<button class="backlink" id="ch-back">' + I.back + " Panel</button>" +
+    '<div class="subhead"><h2>Historial de clima</h2></div>' +
+    '<p class="meta-line" style="margin:-4px 2px 12px">Registro diario por faena desde el 1 de agosto de 2026, usando la misma fuente del clima. Se actualiza solo una vez al día y puedes forzarlo aquí.</p>' +
+    (conCoords.length ? '<div class="chips section" id="ch-faenas">' + selChips + "</div>" : "") +
+    '<div class="card pad section"><div class="subhead" style="margin:0 0 8px"><h2 style="font-size:1.05rem">' + (f ? esc(f.nombre) : "Faena") + "</h2>" +
+      (f && f.comuna ? '<span class="meta-line">' + esc(f.comuna) + "</span>" : "") + "</div>" +
+      '<div class="meta-line" style="font-size:.78rem;margin-bottom:10px">' + esc(sub) + "</div>" +
+      tabla + "</div>" +
+    (f ? '<button class="btn btn-primary section" id="ch-upd">' + I.route + (climaHistBusy ? "Actualizando…" : "Actualizar historial") + "</button>" : "") +
+    '<button class="btn btn-soft" id="ch-print">' + I.doc + "Imprimir / Guardar PDF</button>";
+
+  $("#ch-back", view).onclick = () => ctx.go("home", {});
+  $$("#ch-faenas [data-fh]", view).forEach(b => b.onclick = () => { climaHistSel = b.getAttribute("data-fh"); renderPlanificacion(view, ctx); });
+  const bu = $("#ch-upd", view);
+  if (bu) bu.onclick = async () => {
+    if (!f) return;
+    bu.disabled = true; bu.textContent = "Actualizando…";
+    try { await syncFaenaHist(f, canWrite); toast("Historial actualizado", "ok"); }
+    catch (e) { toast("No se pudo actualizar: " + (e.message || e), "err"); }
+    renderPlanificacion(view, ctx);
+  };
+  const bp = $("#ch-print", view); if (bp) bp.onclick = () => printClimaHist(f);
+}
+
+// Impresión del historial de la faena seleccionada.
+function printClimaHist(f) {
+  if (!f || !f.climaHist || !f.climaHist.dias) { toast("No hay datos para imprimir", "err"); return; }
+  const old = document.getElementById("print-area"); if (old) old.remove();
+  const dias = Object.values(f.climaHist.dias).filter(d => d.fecha >= HIST_START).sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const rows = dias.map(d => {
+    const dt = new Date(d.fecha + "T12:00:00");
+    const dl = DIAS_LARGO[(dt.getDay() + 6) % 7];
+    return "<tr><td>" + esc(dl + " " + dt.getDate() + "/" + (dt.getMonth() + 1) + "/" + dt.getFullYear()) + "</td>" +
+      '<td class="r">' + (d.precip24 != null ? d.precip24.toFixed(1) + " mm" : "—") + "</td>" +
+      '<td class="r">' + (d.windKmh != null ? Math.round(d.windKmh) : "—") + "</td>" +
+      '<td class="r">' + (d.tmin != null ? Math.round(d.tmin) + "°" : "—") + " / " + (d.tmax != null ? Math.round(d.tmax) + "°" : "—") + "</td>" +
+      "<td>" + esc(wmoDesc(d.code) || "—") + "</td></tr>";
+  }).join("");
+  const tot = dias.reduce((s, d) => s + (Number(d.precip24) || 0), 0);
+  const pa = document.createElement("div");
+  pa.id = "print-area";
+  pa.innerHTML =
+    '<div class="pr-header"><h1>Historial de clima</h1>' +
+    '<div class="pr-sub">' + esc(f.nombre) + (f.comuna ? " · " + esc(f.comuna) : "") + "</div>" +
+    '<div class="pr-week">Desde ' + fmtDate(new Date(HIST_START + "T12:00:00").getTime()) + " · Fuente: Open-Meteo</div>" +
+    '<div class="pr-gen">Generado: ' + fmtDateTime(Date.now()) + "</div></div>" +
+    '<div class="wd-day"><table class="wd-table"><thead><tr><th>Día</th><th class="r">Lluvia</th><th class="r">Viento km/h</th><th class="r">Mín/Máx</th><th>Condición</th></tr></thead><tbody>' +
+    rows + "</tbody></table></div>" +
+    '<div class="wd-tot"><span>' + dias.length + " días</span><b>Lluvia acumulada: " + tot.toFixed(1) + " mm</b></div>";
+  document.body.appendChild(pa);
+  const cleanup = () => { const p = document.getElementById("print-area"); if (p) p.remove(); window.removeEventListener("afterprint", cleanup); };
+  window.addEventListener("afterprint", cleanup);
+  setTimeout(() => { try { window.print(); } catch (e) {} setTimeout(cleanup, 2000); }, 80);
 }
 
 // Carga el plan de la semana; si no existe devuelve un borrador en memoria.

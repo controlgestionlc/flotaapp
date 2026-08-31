@@ -45,6 +45,44 @@ export async function fetchFaenaClima(f) {
   };
 }
 
+// Fecha de inicio del histórico solicitado por el negocio.
+export const HIST_START = "2026-08-01";
+
+// Devuelve "YYYY-MM-DD" a partir de un Date.
+function iso(d) {
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+// Inicio efectivo: la API de pronóstico solo permite ~92 días hacia atrás.
+export function histStart() {
+  const min = new Date(Date.now() - 92 * 86400000);
+  const minISO = iso(min);
+  return HIST_START > minISO ? HIST_START : minISO;
+}
+export function histEnd() { return iso(new Date()); }
+
+// Histórico diario de una faena (precipitación acumulada, viento, temperaturas)
+// usando la misma fuente Open-Meteo. Rango [startISO, endISO].
+export async function fetchFaenaHistorial(f, startISO, endISO) {
+  if (!hasCoords(f)) throw new Error("La faena no tiene coordenadas");
+  const url = API + "?latitude=" + encodeURIComponent(f.lat) + "&longitude=" + encodeURIComponent(f.lng) +
+    "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max" +
+    "&timezone=auto&start_date=" + startISO + "&end_date=" + endISO;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Servicio de clima no disponible (" + res.status + ")");
+  const j = await res.json();
+  const d = j.daily || {};
+  const n = (a, i) => (Array.isArray(a) && a[i] != null ? Number(a[i]) : null);
+  return (d.time || []).map((fecha, i) => ({
+    fecha,
+    code: n(d.weather_code, i),
+    tmax: n(d.temperature_2m_max, i),
+    tmin: n(d.temperature_2m_min, i),
+    precip24: n(d.precipitation_sum, i),
+    probLluvia: n(d.precipitation_probability_max, i),
+    windKmh: n(d.wind_speed_10m_max, i)
+  }));
+}
+
 // Geocodificación por nombre de lugar (comuna/localidad) vía Open-Meteo.
 // Devuelve { lat, lng, nombre } o null si no hay resultados.
 export async function geocode(nombre) {

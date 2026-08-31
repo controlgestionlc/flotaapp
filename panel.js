@@ -4,6 +4,7 @@ import { DOC_TYPES } from "./checklist.js";
 import { maintenanceAlerts } from "./maintenance.js";
 import { weekInfo, dayKey } from "./planning.js";
 import { openTruckWeek } from "./truckweek.js";
+import { autoSyncClimaHistBg } from "./planificacion.js";
 import {
   I, esc, fmtCLP, fmtDate, fmtDateTime, monthKey, dInput, docStatus,
   iconSpan, emptyBox, toast, openSheet, closeSheet, $, $$
@@ -140,6 +141,7 @@ async function dashboard(view, ctx) {
 
   const navBtns = ['<button class="btn btn-ghost" id="nav-camiones" style="flex:1;min-width:140px">' + I.truck + "Camiones</button>"];
   if (can(p, "plan.view")) navBtns.push('<button class="btn btn-ghost" id="nav-plan" style="flex:1;min-width:140px">' + I.route + "Planificación</button>");
+  if (can(p, "plan.view")) navBtns.push('<button class="btn btn-ghost" id="nav-climahist" style="flex:1;min-width:140px">' + I.alert + "Historial de clima</button>");
   if (can(p, "reports.view")) navBtns.push('<button class="btn btn-ghost" id="nav-reportes" style="flex:1;min-width:140px">' + I.chart + "Indicadores</button>");
   if (can(p, "product.manage")) navBtns.push('<button class="btn btn-ghost" id="nav-productos" style="flex:1;min-width:140px">' + I.route + "Productos</button>");
   if (can(p, "user.manage")) navBtns.push('<button class="btn btn-ghost" id="nav-usuarios" style="flex:1;min-width:140px">' + I.users + "Usuarios</button>");
@@ -190,6 +192,7 @@ async function dashboard(view, ctx) {
   const am = $("#alr-more", view); if (am) am.onclick = () => ctx.go("alertas", {});
   $("#nav-camiones", view).onclick = () => ctx.go("camiones", {});
   const nplan = $("#nav-plan", view); if (nplan) nplan.onclick = () => ctx.go("planificacion", {});
+  const nch = $("#nav-climahist", view); if (nch) nch.onclick = () => ctx.go("climahist", {});
   const nr = $("#nav-reportes", view); if (nr) nr.onclick = () => ctx.go("reportes", {});
   const npr = $("#nav-productos", view); if (npr) npr.onclick = () => ctx.go("productos", {});
   const nu = $("#nav-usuarios", view); if (nu) nu.onclick = () => ctx.go("usuarios", {});
@@ -198,6 +201,9 @@ async function dashboard(view, ctx) {
   $$("[data-order]", view).forEach(b => b.onclick = () => createOrder(ctx, b.getAttribute("data-order"), fallas));
   $$("[data-resolve]", view).forEach(b => b.onclick = () => resolveFalla(ctx, b.getAttribute("data-resolve"), fallas));
   $$("[data-openorder]", view).forEach(b => b.onclick = () => { orderDraft = null; ctx.go("order", { id: b.getAttribute("data-openorder") }); });
+
+  // Sincronización automática del historial de clima (una vez al día).
+  autoSyncClimaHistBg(p);
 }
 
 function kpi(cls, val, lab, sub, key) {
