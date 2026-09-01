@@ -1,6 +1,6 @@
 import { store } from "./store.js";
 import { CK_ITEMS } from "./checklist.js";
-import { weekInfo, dayKey, toMin, truckAvailability, deriveFallas } from "./planning.js";
+import { weekInfo, dayKey, toMin, truckAvailability, deriveFallas, reservedGuias, estadoGuia } from "./planning.js";
 import { openTruckWeek } from "./truckweek.js";
 import {
   I, esc, uid, fmtCLP, fmtDate, fmtDateTime, todayKey, dInput, iconSpan, emptyBox,
@@ -400,10 +400,22 @@ async function viajeSalida(view, ctx, t) {
     '<div class="card pad section">' +
       '<label class="fld"><span class="lb">Predio de origen</span><input class="input" id="vj-predio" placeholder="Predio de carga" value="' + esc(d.predio) + '"></label>' +
       '<label class="fld" style="margin-bottom:0"><span class="lb">Guía de despacho</span><input class="input" id="vj-guia" placeholder="N° de guía" value="' + esc(d.guia) + '"></label>' +
+      '<div id="vj-guia-hint" style="font-size:.8rem;margin-top:6px"></div>' +
     "</div>" +
     '<div class="formbar"><button class="btn btn-primary" id="vj-submit">' + I.route + "Registrar salida</button></div>";
 
-  ["predio", "guia"].forEach(k => { const el = $("#vj-" + k, view); if (el) el.oninput = () => { d[k] = el.value; }; });
+  // Guías reservadas por la secretaria para este camión hoy: si el chofer
+  // ingresa una distinta, se avisa en rojo (no bloquea el registro).
+  const reservedSet = reservedGuias(plan, t.id, dk);
+  const updGuiaHint = () => {
+    const el = $("#vj-guia-hint", view); if (!el) return;
+    const stG = estadoGuia(reservedSet, d.guia);
+    if (stG === "ok") el.innerHTML = '<span style="color:var(--ok)">✓ Coincide con la guía reservada.</span>';
+    else if (stG === "dif") el.innerHTML = '<span style="color:var(--crit);font-weight:600">● No coincide con las guías reservadas (' + [...reservedSet].map(esc).join(", ") + ").</span>";
+    else el.innerHTML = reservedSet.size ? '<span class="meta-line">Guías reservadas: ' + [...reservedSet].map(esc).join(", ") + "</span>" : "";
+  };
+  ["predio", "guia"].forEach(k => { const el = $("#vj-" + k, view); if (el) el.oninput = () => { d[k] = el.value; if (k === "guia") updGuiaHint(); }; });
+  updGuiaHint();
   $$("[data-asig]", view).forEach(b => b.onclick = () => {
     const el = $("#vj-predio", view); if (el) d.predio = el.value;
     const gl = $("#vj-guia", view); if (gl) d.guia = gl.value;

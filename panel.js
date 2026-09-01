@@ -142,6 +142,7 @@ async function dashboard(view, ctx) {
   const navBtns = ['<button class="btn btn-ghost" id="nav-camiones" style="flex:1;min-width:140px">' + I.truck + "Camiones</button>"];
   if (can(p, "plan.view")) navBtns.push('<button class="btn btn-ghost" id="nav-plan" style="flex:1;min-width:140px">' + I.route + "Planificación</button>");
   if (can(p, "plan.view")) navBtns.push('<button class="btn btn-ghost" id="nav-climahist" style="flex:1;min-width:140px">' + I.alert + "Historial de clima</button>");
+  if (can(p, "reserva.manage")) navBtns.push('<button class="btn btn-ghost" id="nav-recepcion" style="flex:1;min-width:140px">' + I.pin + "Recepción en planta</button>");
   if (can(p, "reports.view")) navBtns.push('<button class="btn btn-ghost" id="nav-reportes" style="flex:1;min-width:140px">' + I.chart + "Indicadores</button>");
   if (can(p, "product.manage")) navBtns.push('<button class="btn btn-ghost" id="nav-productos" style="flex:1;min-width:140px">' + I.route + "Productos</button>");
   if (can(p, "user.manage")) navBtns.push('<button class="btn btn-ghost" id="nav-usuarios" style="flex:1;min-width:140px">' + I.users + "Usuarios</button>");
@@ -193,6 +194,7 @@ async function dashboard(view, ctx) {
   $("#nav-camiones", view).onclick = () => ctx.go("camiones", {});
   const nplan = $("#nav-plan", view); if (nplan) nplan.onclick = () => ctx.go("planificacion", {});
   const nch = $("#nav-climahist", view); if (nch) nch.onclick = () => ctx.go("climahist", {});
+  const nre = $("#nav-recepcion", view); if (nre) nre.onclick = () => ctx.go("recepcion", {});
   const nr = $("#nav-reportes", view); if (nr) nr.onclick = () => ctx.go("reportes", {});
   const npr = $("#nav-productos", view); if (npr) npr.onclick = () => ctx.go("productos", {});
   const nu = $("#nav-usuarios", view); if (nu) nu.onclick = () => ctx.go("usuarios", {});

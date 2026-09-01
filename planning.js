@@ -46,6 +46,40 @@ export function dayKey(ts) {
 }
 
 // ---------------------------------------------------------------
+//  Reservas de recepción en planta (eslabón de la secretaria)
+// ---------------------------------------------------------------
+// Cada asignación (camión/día/faena) tiene N viajes objetivo. Por cada vuelta
+// la secretaria reserva un horario de recepción y una guía de despacho, además
+// de la planta de destino de la asignación.
+export function reservaResumen(asig) {
+  const n = Number(asig && asig.viajesObjetivo) || 0;
+  const r = (asig && asig.reservas) || [];
+  const hechas = r.filter(x => x && x.horaRecepcion).length;
+  const conPlanta = !!(asig && asig.plantaDestino);
+  const completa = n > 0 && conPlanta && hechas >= n;
+  return { n, hechas, conPlanta, completa, alguna: hechas > 0 || conPlanta };
+}
+// Guías reservadas por la secretaria para un camión en un día (Set de strings).
+export function reservedGuias(plan, camionId, dk) {
+  const set = new Set();
+  ((plan && plan.asignaciones) || []).forEach(a => {
+    if (a.camionId === camionId && a.fecha === dk) {
+      (a.reservas || []).forEach(rv => { if (rv && rv.guia) set.add(String(rv.guia).trim()); });
+    }
+  });
+  return set;
+}
+// ¿La guía que ingresó el chofer coincide con alguna reservada por la secretaria?
+// Devuelve: "ok" si coincide, "dif" si hay reservas y no coincide, null si no hay
+// guías reservadas con qué comparar.
+export function estadoGuia(reservedSet, guia) {
+  const g = String(guia || "").trim();
+  if (!reservedSet || reservedSet.size === 0) return null;
+  if (!g) return null;
+  return reservedSet.has(g) ? "ok" : "dif";
+}
+
+// ---------------------------------------------------------------
 //  Disponibilidad de recursos
 // ---------------------------------------------------------------
 

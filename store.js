@@ -50,7 +50,8 @@ function demoAdapter() {
       { uid: "u_ger",   email: "gerente@lacabana.cl",    nombre: "Ana Torres",      role: "gerente",       activo: true, createdAt: now, _pw: "gerente123" },
       { uid: "u_chofer",email: "conductor@lacabana.cl",  nombre: "José Muñoz",      role: "conductor",     activo: true, createdAt: now, _pw: "chofer123" },
       { uid: "u_chofer2",email: "pedro@lacabana.cl",     nombre: "Pedro Salazar",   role: "conductor",     activo: true, createdAt: now, _pw: "chofer123" },
-      { uid: "u_chofer3",email: "luis@lacabana.cl",      nombre: "Luis Fuentes",    role: "conductor",     activo: true, createdAt: now, _pw: "chofer123" }
+      { uid: "u_chofer3",email: "luis@lacabana.cl",      nombre: "Luis Fuentes",    role: "conductor",     activo: true, createdAt: now, _pw: "chofer123" },
+      { uid: "u_secre", email: "secretaria@lacabana.cl", nombre: "Marta Herrera",   role: "secretaria",    activo: true, createdAt: now, _pw: "secre123" }
     ];
     const mkDocs = (pc, so, rt) => ({
       permisoCirculacion: { numero: pc.n, vence: pc.v },
@@ -116,6 +117,14 @@ function demoAdapter() {
     // Camión 03 (Luis): Faena B lun-mar, reserva mié, Faena A jue-vie
     mkA("as11",0,"t3","u_chofer3","fa2",4,80); mkA("as12",1,"t3","u_chofer3","fa2",4,80);
     mkA("as13",3,"t3","u_chofer3","fa1",5,100); mkA("as14",4,"t3","u_chofer3","fa1",5,100);
+    // Reservas de recepción (secretaria): as1 completa hoy, as6 parcial.
+    const setRes = (id, planta, reservas) => { const a = asig.find(x => x.id === id); if (a) { a.plantaDestino = planta; a.reservas = reservas; } };
+    setRes("as1", "Aserradero Mininco", [
+      { horaRecepcion: "08:30", guia: "GD-45210" }, { horaRecepcion: "10:30", guia: "GD-45211" },
+      { horaRecepcion: "12:30", guia: "GD-45212" }, { horaRecepcion: "14:30", guia: "GD-45213" },
+      { horaRecepcion: "16:00", guia: "GD-45214" }
+    ]);
+    setRes("as6", "Planta Collipulli", [{ horaRecepcion: "09:00", guia: "GD-45301" }, { horaRecepcion: "11:00", guia: "GD-45302" }]);
     const plans = [{
       id: iso.year + "-W" + String(iso.num).padStart(2,"0"),
       semana: iso.num, anio: iso.year, inicio: monday, fin: monday + 6*D,

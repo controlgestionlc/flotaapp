@@ -36,7 +36,7 @@ service cloud.firestore {
     // Perfiles de usuario
     match /users/{uid} {
       // Cada quien lee su propio perfil; supervisor/gerente/admin leen todos.
-      allow read: if signedIn() && (request.auth.uid == uid || hasRole(['supervisor','gerente','administrador']));
+      allow read: if signedIn() && (request.auth.uid == uid || hasRole(['supervisor','gerente','administrador','secretaria']));
       // Solo el administrador crea o edita perfiles y roles.
       allow create, update, delete: if hasRole(['administrador']);
     }
@@ -123,7 +123,9 @@ service cloud.firestore {
     // Planificación de flota: programa semanal y asignaciones
     match /plans/{id} {
       allow read: if isActive();
-      allow create, update, delete: if hasRole(['supervisor','administrador']);
+      // La secretaria registra reservas de recepción (horarios, planta y guías)
+      // dentro del plan, por eso también puede escribir.
+      allow create, update, delete: if hasRole(['supervisor','administrador','secretaria']);
     }
 
     // Planificación de flota: imprevistos operacionales

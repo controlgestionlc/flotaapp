@@ -8,7 +8,8 @@ import {
   DIAS, DIAS_LARGO, weekInfo, dayKey, truckAvailability, driverAvailability,
   truckTimeClash, toMin, faenaAccess, PLAN_ESTADOS, IMPREVISTO_TIPOS,
   evaluarAccesoClima, CLIMA_PARAMS_DEFAULT, wmoDesc,
-  autoAssign, CRITERIOS, AUTO_PARAMS_DEFAULT, tripsPerTruck, capacidadViaje, deriveFallas
+  autoAssign, CRITERIOS, AUTO_PARAMS_DEFAULT, tripsPerTruck, capacidadViaje, deriveFallas,
+  reservaResumen, reservedGuias, estadoGuia
 } from "./planning.js";
 import { fetchClimaFaenas, hasCoords, geocode, fetchFaenaHistorial, histStart, histEnd, HIST_START } from "./clima.js";
 
@@ -45,8 +46,106 @@ export async function renderPlanificacion(view, ctx) {
   if (r === "control") return controlScreen(view, ctx);
   if (r === "clima") return climaScreen(view, ctx);
   if (r === "climahist") return climaHistScreen(view, ctx);
+  if (r === "recepcion") return recepcionScreen(view, ctx);
   if (r === "auto") return autoScreen(view, ctx);
   return semanal(view, ctx);
+}
+
+// Día seleccionado en la pantalla de recepción (offset dentro de la semana).
+let recepDayTs = null;
+
+// =============================================================
+//  PANTALLA · Recepción en planta (secretaria)
+//  Reserva de horarios de recepción, planta de destino y guías por viaje.
+// =============================================================
+async function recepcionScreen(view, ctx) {
+  const canEdit = can(ctx.profile, "reserva.manage");
+  if (recepDayTs == null) recepDayTs = Date.now();
+  const wk = weekInfo(recepDayTs);
+  const plans = await store.listPlans();
+  let plan = plans.find(p => p.id === wk.key) || { id: wk.key, asignaciones: [] };
+  if (!plan.asignaciones) plan.asignaciones = [];
+  const [trucks, faenas, users] = await Promise.all([store.listTrucks(), store.listFaenas(), store.listUsers().catch(() => [])]);
+  const tNum = id => { const t = trucks.find(x => x.id === id); return t ? t.num : "?"; };
+  const tPat = id => { const t = trucks.find(x => x.id === id); return t ? (t.patente || "") : ""; };
+  const coN = id => { const u = (users || []).find(x => x.uid === id); return u ? u.nombre : ""; };
+  const dk = dayKey(recepDayTs);
+
+  const dayChips = wk.dias.map((ts, i) => {
+    const on = dayKey(ts) === dk;
+    return '<button class="chip' + (on ? " on" : "") + '" data-rd="' + dayKey(ts) + '">' + DIAS[i] + " " + new Date(ts).getDate() + "</button>";
+  }).join("");
+
+  const asigs = plan.asignaciones.filter(a => a.fecha === dk && a.faenaId)
+    .sort((a, b) => (tNum(a.camionId)).localeCompare(tNum(b.camionId)) || (a.turnoInicio || "").localeCompare(b.turnoInicio || ""));
+
+  const nComp = asigs.filter(a => reservaResumen(a).completa).length;
+
+  const cards = asigs.length ? asigs.map(a => {
+    const rr = reservaResumen(a);
+    const pill = rr.completa ? '<span class="pill ok"><span class="dot"></span>Reservado</span>'
+      : rr.alguna ? '<span class="pill warn"><span class="dot"></span>' + rr.hechas + "/" + rr.n + "</span>"
+        : '<span class="pill neutral"><span class="dot"></span>Pendiente</span>';
+    const co = coN(a.conductorId);
+    return '<div class="row" data-res="' + a.id + '" style="cursor:pointer"><span class="trucknum sm">' + esc(tNum(a.camionId)) + "</span>" +
+      '<div class="rl"><div class="t">' + esc(faName(faenas, a.faenaId)) + " " + pill + "</div>" +
+      '<div class="m"><span>' + esc((a.turnoInicio || "--") + " ─ " + (a.turnoFin || "--")) + "</span>" +
+      "<span>" + (a.viajesObjetivo || 0) + " viajes</span>" + (co ? "<span>" + esc(co) + "</span>" : "") +
+      (a.plantaDestino ? "<span>→ " + esc(a.plantaDestino) + "</span>" : "") + "</div></div>" +
+      "<span class='arrow'>" + I.arrow + "</span></div>";
+  }).join("") : '<div class="empty">' + I.pin + "<div>No hay viajes planificados para este día.</div></div>";
+
+  view.innerHTML =
+    '<button class="backlink" id="rc-back">' + I.back + " Panel</button>" +
+    '<div class="subhead"><h2>Recepción en planta</h2><span class="pill ' + (asigs.length && nComp === asigs.length ? "ok" : "warn") + '"><span class="dot"></span>' + nComp + "/" + asigs.length + " listas</span></div>" +
+    '<p class="meta-line" style="margin:-4px 2px 12px">Reserva el horario de recepción, la planta de destino y la guía de despacho de cada viaje. El check aparece en la planificación cuando el día queda completo.</p>' +
+    '<div class="pl-weeknav section"><button class="btn sm btn-soft" id="rc-prev">' + I.back + "Semana</button>" +
+      '<div class="pl-weeklabel"><b>Semana ' + wk.num + '</b><span>' + fmtDate(wk.inicio) + " ─ " + fmtDate(wk.fin) + "</span></div>" +
+      '<button class="btn sm btn-soft" id="rc-next">Semana' + I.arrow + "</button></div>" +
+    '<div class="chips section" id="rc-days">' + dayChips + "</div>" +
+    '<div class="card">' + cards + "</div>";
+
+  $("#rc-back", view).onclick = () => ctx.go("home", {});
+  $("#rc-prev", view).onclick = () => { recepDayTs -= 7 * 86400000; renderPlanificacion(view, ctx); };
+  $("#rc-next", view).onclick = () => { recepDayTs += 7 * 86400000; renderPlanificacion(view, ctx); };
+  $$("#rc-days [data-rd]", view).forEach(b => b.onclick = () => { recepDayTs = new Date(b.getAttribute("data-rd") + "T12:00:00").getTime(); renderPlanificacion(view, ctx); });
+  if (canEdit) $$("[data-res]", view).forEach(b => b.onclick = () => {
+    const a = plan.asignaciones.find(x => x.id === b.getAttribute("data-res"));
+    editReserva(view, ctx, plan, a, { tNum, tPat, coN, faName: id => faName(faenas, id) });
+  });
+}
+
+// Ficha de reserva de una asignación: planta destino + horario/guía por vuelta.
+function editReserva(view, ctx, plan, a, H) {
+  const n = Number(a.viajesObjetivo) || 0;
+  const st = { plantaDestino: a.plantaDestino || "", reservas: [] };
+  for (let i = 0; i < n; i++) { const r = (a.reservas || [])[i] || {}; st.reservas.push({ horaRecepcion: r.horaRecepcion || "", guia: r.guia || "" }); }
+  const vueltas = st.reservas.map((r, i) =>
+    '<div class="card pad" style="box-shadow:none;border-color:var(--line);margin-bottom:10px">' +
+    '<div class="meta-line" style="font-weight:600;color:var(--ink);margin-bottom:8px">Vuelta ' + (i + 1) + "</div>" +
+    '<div class="grid2"><label class="fld" style="margin:0"><span class="lb">Hora de recepción</span><input class="input" type="time" data-rv="' + i + '" data-f="horaRecepcion" value="' + esc(r.horaRecepcion) + '"></label>' +
+    '<label class="fld" style="margin:0"><span class="lb">N° guía de despacho</span><input class="input" data-rv="' + i + '" data-f="guia" placeholder="Ej: GD-45210" value="' + esc(r.guia) + '"></label></div></div>').join("");
+
+  openSheet("Reserva · " + H.tNum(a.camionId) + " · " + H.faName(a.faenaId),
+    '<div class="meta-line" style="margin:0 0 12px">' + esc((a.turnoInicio || "--") + " ─ " + (a.turnoFin || "--")) + " · " + n + " viajes" + (H.coN(a.conductorId) ? " · " + esc(H.coN(a.conductorId)) : "") + "</div>" +
+    '<label class="fld"><span class="lb">Planta de destino</span><input class="input" id="rv-planta" placeholder="Nombre de la planta / aserradero" value="' + esc(st.plantaDestino) + '"></label>' +
+    (n ? '<span class="eyebrow" style="display:block;margin:6px 0 8px">Horario de recepción y guía por vuelta</span>' + vueltas
+      : '<p class="meta-line">Esta asignación no tiene viajes objetivo. Ajusta el número de viajes en la planificación.</p>') +
+    '<button class="btn btn-primary" id="rv-ok" style="width:100%;margin-top:4px">' + I.check + "Guardar reserva</button>",
+    () => {
+      $$("[data-rv]").forEach(inp => inp.oninput = () => { const i = +inp.getAttribute("data-rv"); st.reservas[i][inp.getAttribute("data-f")] = inp.value; });
+      $("#rv-ok").onclick = async () => {
+        st.plantaDestino = ($("#rv-planta").value || "").trim();
+        $$("[data-rv]").forEach(inp => { const i = +inp.getAttribute("data-rv"); st.reservas[i][inp.getAttribute("data-f")] = inp.value; });
+        a.plantaDestino = st.plantaDestino;
+        a.reservas = st.reservas.map(r => ({ horaRecepcion: (r.horaRecepcion || "").trim(), guia: (r.guia || "").trim() }));
+        const idx = plan.asignaciones.findIndex(x => x.id === a.id);
+        if (idx >= 0) plan.asignaciones[idx] = a;
+        const btn = $("#rv-ok"); btn.disabled = true; btn.textContent = "Guardando...";
+        try { await persistPlan(plan); closeSheet(); toast("Reserva guardada", "ok"); renderPlanificacion(view, ctx); }
+        catch (e) { toast("No se pudo guardar: " + (e.message || e), "err"); btn.disabled = false; btn.textContent = "Guardar reserva"; }
+      };
+    });
 }
 
 // Descarga el histórico de una faena (desde HIST_START) y lo fusiona con lo
@@ -291,7 +390,11 @@ async function semanal(view, ctx) {
       if (as.length) {
         const inner = as.map(a => {
           const col = faColor(faenas, a.faenaId);
-          return '<span class="pl-fa" style="border-left:3px solid ' + col + '"><b style="color:' + col + '">' + esc(faName(faenas, a.faenaId)) + "</b>" +
+          const rr = reservaResumen(a);
+          const chk = rr.completa
+            ? '<span title="Recepción reservada" style="color:var(--ok);font-weight:700"> ✓</span>'
+            : (rr.alguna ? '<span title="Reserva parcial" style="color:var(--warn);font-weight:700"> ◐</span>' : "");
+          return '<span class="pl-fa" style="border-left:3px solid ' + col + '"><b style="color:' + col + '">' + esc(faName(faenas, a.faenaId)) + chk + "</b>" +
             '<span class="num">' + (Number(a.viajesObjetivo) || 0) + " v." + (a.turnoInicio ? " · " + esc(a.turnoInicio) : "") + "</span></span>";
         }).join("");
         return '<td><button class="pl-cell multi" data-cell="' + t.id + "|" + dk + '">' + inner + "</button></td>";
@@ -696,11 +799,27 @@ async function operacionDia(view, ctx) {
     else if (acc.k === "condicionada") estado = '<span class="pill warn"><span class="dot"></span>Acceso condicionado</span>';
     else if (realizados > 0) estado = '<span class="pill ok"><span class="dot"></span>Operando</span>';
     else estado = '<span class="pill warn"><span class="dot"></span>Sin iniciar</span>';
+    // Recepción en planta reservada por la secretaria + control de guías.
+    const rr = reservaResumen(a);
+    const reservedSet = reservedGuias(plan, a.camionId, dk);
+    const tripsHoy = trips.filter(v => v.truckId === a.camionId && dayKey(v.salida || v.ts) === dk);
+    const difs = tripsHoy.map(v => v.guiaDespacho).filter(g => estadoGuia(reservedSet, g) === "dif");
+    const resPill = rr.completa ? '<span class="pill ok"><span class="dot"></span>Recepción reservada</span>'
+      : rr.alguna ? '<span class="pill warn"><span class="dot"></span>Reserva ' + rr.hechas + "/" + rr.n + "</span>"
+        : '<span class="pill neutral"><span class="dot"></span>Sin reserva</span>';
+    const horarios = (a.reservas || []).map((r, i) => (r && r.horaRecepcion) ? "V" + (i + 1) + " " + esc(r.horaRecepcion) + (r.guia ? " · " + esc(r.guia) : "") : "").filter(Boolean).join("  ·  ");
+    const reservaBlock = '<div style="margin-top:8px;border-top:1px solid var(--line);padding-top:8px">' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">' + resPill +
+      (a.plantaDestino ? '<span class="meta-line">→ ' + esc(a.plantaDestino) + "</span>" : "") + "</div>" +
+      (horarios ? '<div class="meta-line" style="font-size:.8rem;margin-top:6px">Recepción: ' + horarios + "</div>" : "") +
+      (difs.length ? '<div style="margin-top:6px;color:var(--crit);font-size:.82rem;font-weight:600">● Guía sin coincidir con la reserva: ' + difs.map(esc).join(", ") + "</div>" : "") +
+      "</div>";
     return '<div class="card pad section"><div class="stat-truck" style="margin-bottom:8px"><span class="trucknum">' + esc(t.num) + "</span>" +
       '<div style="flex:1"><div style="font-weight:700;font-family:Barlow Semi Condensed;font-size:1.05rem">' + esc(co ? co.nombre : "Sin conductor") + "</div>" +
       '<div class="meta-line" style="margin-top:2px">' + esc(faName(faenas, a.faenaId)) + " · " + esc(t.patente || "") + "</div></div>" + estado + "</div>" +
       '<div style="display:flex;gap:8px;flex-wrap:wrap"><span class="pill neutral">Objetivo: ' + (a.viajesObjetivo || 0) + " v.</span>" +
-      '<span class="pill ' + (realizados >= (a.viajesObjetivo || 0) && (a.viajesObjetivo || 0) > 0 ? "ok" : "steel") + '">Realizados: ' + realizados + "</span></div></div>";
+      '<span class="pill ' + (realizados >= (a.viajesObjetivo || 0) && (a.viajesObjetivo || 0) > 0 ? "ok" : "steel") + '">Realizados: ' + realizados + "</span></div>" +
+      reservaBlock + "</div>";
   }).join("") : '<div class="card pad section">' + emptyBox("No hay asignaciones para hoy") + "</div>";
 
   const canEdit = can(ctx.profile, "plan.manage");

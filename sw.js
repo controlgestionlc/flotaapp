@@ -5,7 +5,7 @@
 // ►► AL PUBLICAR UNA VERSIÓN NUEVA: sube APP_VERSION aquí y el mismo número
 //    en window.BF_VERSION dentro de index.html. Con eso, al abrir la app
 //    aparece el botón "Actualizar" en los celulares.
-const APP_VERSION = "1.1.5";
+const APP_VERSION = "1.2.0";
 const BF_CACHE = "bf-cache-" + APP_VERSION;
 const CORE = ["./", "./index.html", "./styles.css", "./manifest.webmanifest",
   "./icon-192.png", "./icon-512.png", "./icon-maskable.png"];

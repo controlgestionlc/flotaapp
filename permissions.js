@@ -8,9 +8,10 @@
 
 export const ROLES = {
   conductor:     { label: "Conductor",     rank: 1 },
-  supervisor:    { label: "Supervisor",    rank: 2 },
-  gerente:       { label: "Gerente",       rank: 3 },
-  administrador: { label: "Administrador", rank: 4 }
+  secretaria:    { label: "Secretaria",    rank: 2 },
+  supervisor:    { label: "Supervisor",    rank: 3 },
+  gerente:       { label: "Gerente",       rank: 4 },
+  administrador: { label: "Administrador", rank: 5 }
 };
 
 // Catálogo de permisos (clave: descripción para referencia).
@@ -30,7 +31,8 @@ export const PERMISSIONS = {
   "data.import":      "Importar viajes históricos desde Excel",
   "user.manage":      "Administrar usuarios y roles",
   "plan.view":        "Ver la planificación de flota",
-  "plan.manage":      "Crear y editar la planificación de flota"
+  "plan.manage":      "Crear y editar la planificación de flota",
+  "reserva.manage":   "Registrar horarios de recepción, planta destino y guías por viaje"
 };
 
 // Asignación de permisos por rol. Editar aquí para ampliar.
@@ -39,10 +41,16 @@ const ROLE_PERMISSIONS = {
     "checklist.create", "bitacora.create", "fuel.create", "trip.create",
     "truck.select", "history.own"
   ],
+  // La secretaria reserva los horarios de recepción en planta: lee la
+  // planificación, la disponibilidad y los choferes asignados, y registra
+  // horarios de recepción, planta de destino y guías de despacho por viaje.
+  secretaria: [
+    "fleet.view", "plan.view", "reserva.manage"
+  ],
   supervisor: [
     "fleet.view", "falla.view", "truck.manage", "product.manage", "order.manage",
     "reports.view", "fuel.create", "trip.create", "history.own",
-    "plan.view", "plan.manage"
+    "plan.view", "plan.manage", "reserva.manage"
   ],
   gerente: [
     "fleet.view", "falla.view", "reports.view", "plan.view"
@@ -52,7 +60,7 @@ const ROLE_PERMISSIONS = {
     "truck.select", "history.own",
     "fleet.view", "falla.view", "truck.manage", "product.manage", "order.manage",
     "reports.view", "data.import", "user.manage",
-    "plan.view", "plan.manage"
+    "plan.view", "plan.manage", "reserva.manage"
   ]
 };
 
