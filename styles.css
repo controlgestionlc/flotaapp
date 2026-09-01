@@ -327,3 +327,20 @@ hr.sep{border:0;border-top:1px solid var(--line);margin:16px 0}
 .pl-matrix.ctrl .pl-th-fix{text-align:left}
 
 @media (prefers-reduced-motion: reduce){*{animation-duration:.001ms !important}}
+
+/* Contenedor de las tarjetas Alertas/Órdenes en el panel */
+.dash-two{display:flex;flex-direction:column;gap:10px}
+.dash-two > .tile{width:100%}
+
+/* ====== Vista de escritorio: aprovechar el ancho de pantalla ====== */
+@media (min-width:820px){
+  .app{max-width:1080px}
+  .main{padding:24px 30px 96px}
+  .kpis{grid-template-columns:repeat(4,1fr);gap:14px}
+  .dash-two{flex-direction:row}
+  .dash-two > .tile{flex:1;min-width:0;width:auto}
+  h1{font-size:1.7rem}
+}
+@media (min-width:1180px){
+  .app{max-width:1200px}
+}

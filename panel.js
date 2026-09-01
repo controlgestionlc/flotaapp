@@ -132,10 +132,10 @@ async function dashboard(view, ctx) {
   alerts.sort((a, b) => (a.cls === "crit" ? 0 : 1) - (b.cls === "crit" ? 0 : 1));
   const critN = alerts.filter(a => a.cls === "crit").length;
   // Botón/tarjeta que muestra la cantidad; el detalle abre en panel lateral.
-  const alertsCard = '<div class="section"><button class="tile" id="alr-open" style="width:100%">' +
+  const alertsCard = '<button class="tile" id="alr-open">' +
     '<span class="ic">' + I.alert + "</span>" +
     '<span class="tx"><b>Alertas</b><span>' + (alerts.length ? "Toca para ver el detalle" : "Sin alertas pendientes") + "</span></span>" +
-    '<span class="pill ' + (critN ? "crit" : alerts.length ? "warn" : "ok") + '"><span class="dot"></span>' + alerts.length + "</span></button></div>";
+    '<span class="pill ' + (critN ? "crit" : alerts.length ? "warn" : "ok") + '"><span class="dot"></span>' + alerts.length + "</span></button>";
   const alertsDrawerBody = alerts.length
     ? '<div class="card" style="box-shadow:none;border:0">' + alerts.map(a =>
         '<div class="row" ' + (a.kind === "detenido" ? 'data-alert-order="' + a.orderId + '"' : 'data-alert-truck="' + a.truckId + '"') + ' style="cursor:pointer">' +
@@ -158,17 +158,17 @@ async function dashboard(view, ctx) {
   const openList = openOrders.sort((a, b) => b.createdAt - a.createdAt);
   const done = orders.filter(o => o.estado === "completado").sort((a, b) => b.completedAt - a.completedAt).slice(0, 6);
   // Tarjeta clicable → abre el listado de órdenes en panel lateral.
-  const ordersCard = '<div class="section"><button class="tile" id="ord-open" style="width:100%">' +
+  const ordersCard = '<button class="tile" id="ord-open">' +
     '<span class="ic">' + I.wrench + "</span>" +
     '<span class="tx"><b>Órdenes de taller</b><span>' + (openOrders.length ? "Ver y editar las órdenes" : "Sin órdenes abiertas") + "</span></span>" +
-    '<span class="pill steel">' + openOrders.length + " abiertas</span></button></div>";
+    '<span class="pill steel">' + openOrders.length + " abiertas</span></button>";
   const ordersDrawerBody =
     '<span class="eyebrow" style="display:block;margin:0 0 8px">Abiertas (' + openList.length + ")</span>" +
     '<div class="card" style="box-shadow:none;border:0">' +
       (openList.length ? openList.map(o => orderRow(o, trucks)).join("") : '<div class="empty">' + I.wrench + "<div>Sin órdenes de taller abiertas</div></div>") + "</div>" +
     (done.length ? '<span class="eyebrow" style="display:block;margin:14px 0 8px">Completadas recientes</span><div class="card" style="box-shadow:none;border:0">' + done.map(o => orderRow(o, trucks)).join("") + "</div>" : "");
 
-  view.innerHTML = kpis + availBoard + alertsCard + ordersCard + descBlock;
+  view.innerHTML = kpis + availBoard + '<div class="section dash-two">' + alertsCard + ordersCard + "</div>" + descBlock;
 
   $$("[data-avail]", view).forEach(b => b.onclick = () => availSheet(ctx, b.getAttribute("data-avail"), trucks, orders, fallas));
   $$("[data-kpi]", view).forEach(b => b.onclick = () => kpiDetail(ctx, b.getAttribute("data-kpi"), { trucks, orders, fallas, avail, openOrders, mesTotal }));
