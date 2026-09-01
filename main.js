@@ -46,14 +46,48 @@ function appbar(sub, showExit) {
   const logo = COMPANY.logo
     ? '<img class="logo" src="' + esc(COMPANY.logo) + '" alt="logo" style="border-radius:6px;object-fit:cover">'
     : '<svg class="logo" viewBox="0 0 24 24" fill="none" stroke="#F5871F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h11v10H2z"/><path d="M13 9h4l3 3v4h-7z"/><circle cx="6.5" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></svg>';
-  return '<header class="appbar">' + logo +
+  // El menú lateral es para los perfiles de gestión (no para el conductor).
+  const showMenu = showExit && ctx.profile && ctx.profile.role !== "conductor";
+  const menuBtn = showMenu ? '<button class="iconbtn" id="btn-menu" title="Menú" style="margin-right:2px">' + I.menu + "</button>" : "";
+  return '<header class="appbar">' + menuBtn + logo +
     '<div class="brand"><div class="k">' + esc(COMPANY.app) + '</div><div class="s">' + esc(sub || COMPANY.nombre) + "</div></div>" +
     '<button class="iconbtn" id="btn-theme" title="Tema">' + themeIcon + "</button>" +
     (showExit ? '<button class="iconbtn" id="btn-exit" title="Cerrar sesión">' + I.logout + "</button>" : "") +
     "</header>";
 }
 
+// Menú lateral izquierdo: navegación de la app (incluye "Panel").
+function menuItems(p) {
+  const items = [{ r: "home", l: "Panel", ic: I.grid }, { r: "camiones", l: "Camiones", ic: I.truck }];
+  if (can(p, "plan.view")) items.push({ r: "planificacion", l: "Planificación", ic: I.route });
+  if (can(p, "plan.view")) items.push({ r: "climahist", l: "Historial de clima", ic: I.alert });
+  if (can(p, "reserva.manage")) items.push({ r: "recepcion", l: "Recepción en planta", ic: I.pin });
+  if (can(p, "reports.view")) items.push({ r: "reportes", l: "Indicadores", ic: I.chart });
+  if (can(p, "product.manage")) items.push({ r: "productos", l: "Productos", ic: I.route });
+  if (can(p, "user.manage")) items.push({ r: "usuarios", l: "Usuarios", ic: I.users });
+  if (can(p, "user.manage")) items.push({ r: "empresa", l: "Empresa", ic: I.gear });
+  if (can(p, "data.import")) items.push({ r: "importar", l: "Importar", ic: I.upload });
+  return items;
+}
+const HOME_ROUTES = { home: 1, camiones: 1, truckForm: 1, truckDetail: 1, mantencion: 1, resumen: 1 };
+function openMenu() {
+  const p = ctx.profile; if (!p) return;
+  const cur = ctx.route;
+  const list = menuItems(p).map(it => {
+    const active = it.r === cur || (it.r === "home" && cur === "home");
+    return '<button class="menu-item' + (active ? " on" : "") + '" data-go="' + it.r + '"><span class="mi-ic">' + it.ic + "</span>" + esc(it.l) + "</button>";
+  }).join("");
+  const sc = document.createElement("div");
+  sc.className = "scrim drawer-scrim-left"; sc.id = "menu-scrim";
+  sc.innerHTML = '<nav class="menu-panel"><div class="menu-h">' + esc(COMPANY.app || "Menú") + "</div><div class=\"menu-list\">" + list + "</div></nav>";
+  document.body.appendChild(sc);
+  sc.onclick = e => { if (e.target === sc) sc.remove(); };
+  sc.querySelectorAll("[data-go]").forEach(b => b.onclick = () => { const r = b.getAttribute("data-go"); sc.remove(); ctx.go(r, {}); });
+}
+
 function bindChrome() {
+  const bm = document.getElementById("btn-menu");
+  if (bm) bm.onclick = openMenu;
   const bt = document.getElementById("btn-theme");
   if (bt) bt.onclick = () => { toggleTheme(); renderShell(); };
   const be = document.getElementById("btn-exit");

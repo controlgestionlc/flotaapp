@@ -143,17 +143,6 @@ async function dashboard(view, ctx) {
       ).join("") + "</div>"
     : '<div class="empty">' + I.check + "<div>Sin alertas. Flota al día.</div></div>";
 
-  const navBtns = ['<button class="btn btn-ghost" id="nav-camiones" style="flex:1;min-width:140px">' + I.truck + "Camiones</button>"];
-  if (can(p, "plan.view")) navBtns.push('<button class="btn btn-ghost" id="nav-plan" style="flex:1;min-width:140px">' + I.route + "Planificación</button>");
-  if (can(p, "plan.view")) navBtns.push('<button class="btn btn-ghost" id="nav-climahist" style="flex:1;min-width:140px">' + I.alert + "Historial de clima</button>");
-  if (can(p, "reserva.manage")) navBtns.push('<button class="btn btn-ghost" id="nav-recepcion" style="flex:1;min-width:140px">' + I.pin + "Recepción en planta</button>");
-  if (can(p, "reports.view")) navBtns.push('<button class="btn btn-ghost" id="nav-reportes" style="flex:1;min-width:140px">' + I.chart + "Indicadores</button>");
-  if (can(p, "product.manage")) navBtns.push('<button class="btn btn-ghost" id="nav-productos" style="flex:1;min-width:140px">' + I.route + "Productos</button>");
-  if (can(p, "user.manage")) navBtns.push('<button class="btn btn-ghost" id="nav-usuarios" style="flex:1;min-width:140px">' + I.users + "Usuarios</button>");
-  if (can(p, "user.manage")) navBtns.push('<button class="btn btn-ghost" id="nav-empresa" style="flex:1;min-width:140px">' + I.gear + "Empresa</button>");
-  if (can(p, "data.import")) navBtns.push('<button class="btn btn-ghost" id="nav-importar" style="flex:1;min-width:140px">' + I.upload + "Importar</button>");
-  const navRow = '<div class="section" style="display:flex;flex-wrap:wrap;gap:10px">' + navBtns.join("") + "</div>";
-
   const descRecientes = resolvedDocs.slice(0, 5);
   const descBlock = (!can(p, "falla.view") || !descRecientes.length) ? "" :
     ('<div class="section"><span class="eyebrow">Fallas descartadas (' + resolvedDocs.length + ')</span><div class="card" style="margin-top:8px">' +
@@ -179,7 +168,7 @@ async function dashboard(view, ctx) {
       (openList.length ? openList.map(o => orderRow(o, trucks)).join("") : '<div class="empty">' + I.wrench + "<div>Sin órdenes de taller abiertas</div></div>") + "</div>" +
     (done.length ? '<span class="eyebrow" style="display:block;margin:14px 0 8px">Completadas recientes</span><div class="card" style="box-shadow:none;border:0">' + done.map(o => orderRow(o, trucks)).join("") + "</div>" : "");
 
-  view.innerHTML = kpis + availBoard + alertsCard + ordersCard + navRow + descBlock;
+  view.innerHTML = kpis + availBoard + alertsCard + ordersCard + descBlock;
 
   $$("[data-avail]", view).forEach(b => b.onclick = () => availSheet(ctx, b.getAttribute("data-avail"), trucks, orders, fallas));
   $$("[data-kpi]", view).forEach(b => b.onclick = () => kpiDetail(ctx, b.getAttribute("data-kpi"), { trucks, orders, fallas, avail, openOrders, mesTotal }));
@@ -192,15 +181,7 @@ async function dashboard(view, ctx) {
   $("#ord-open", view).onclick = () => openDrawer("Órdenes de taller", ordersDrawerBody, () => {
     $$("[data-openorder]").forEach(b => b.onclick = () => { closeSheet(); orderDraft = null; ctx.go("order", { id: b.getAttribute("data-openorder") }); });
   });
-  $("#nav-camiones", view).onclick = () => ctx.go("camiones", {});
-  const nplan = $("#nav-plan", view); if (nplan) nplan.onclick = () => ctx.go("planificacion", {});
-  const nch = $("#nav-climahist", view); if (nch) nch.onclick = () => ctx.go("climahist", {});
-  const nre = $("#nav-recepcion", view); if (nre) nre.onclick = () => ctx.go("recepcion", {});
-  const nr = $("#nav-reportes", view); if (nr) nr.onclick = () => ctx.go("reportes", {});
-  const npr = $("#nav-productos", view); if (npr) npr.onclick = () => ctx.go("productos", {});
-  const nu = $("#nav-usuarios", view); if (nu) nu.onclick = () => ctx.go("usuarios", {});
-  const ne = $("#nav-empresa", view); if (ne) ne.onclick = () => ctx.go("empresa", {});
-  const ni = $("#nav-importar", view); if (ni) ni.onclick = () => ctx.go("importar", {});
+  // La navegación se hace desde el menú lateral (ver appbar/openMenu en main.js).
 
   // Sincronización automática del historial de clima (una vez al día).
   autoSyncClimaHistBg(p);
