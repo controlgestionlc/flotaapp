@@ -7,7 +7,7 @@ import { openTruckWeek } from "./truckweek.js";
 import { autoSyncClimaHistBg } from "./planificacion.js";
 import {
   I, esc, fmtCLP, fmtDate, fmtDateTime, monthKey, dInput, docStatus,
-  iconSpan, emptyBox, toast, openSheet, closeSheet, $, $$
+  iconSpan, emptyBox, toast, openSheet, openDrawer, closeSheet, $, $$
 } from "./ui.js";
 
 const EST = {
@@ -130,14 +130,18 @@ async function dashboard(view, ctx) {
 
   const alerts = buildAlerts(trucks, orders).concat(maintenanceAlerts(trucks, fuel));
   alerts.sort((a, b) => (a.cls === "crit" ? 0 : 1) - (b.cls === "crit" ? 0 : 1));
-  const alertsTop = alerts.slice(0, 6);
-  const alertsSection = alerts.length
-    ? '<div class="section"><div class="subhead"><h2>Alertas</h2><button class="btn sm btn-ghost" id="alr-all">Ver todas (' + alerts.length + ")</button></div><div class='card'>" +
-      alertsTop.map(a =>
+  const critN = alerts.filter(a => a.cls === "crit").length;
+  // Botón/tarjeta que muestra la cantidad; el detalle abre en panel lateral.
+  const alertsCard = '<div class="section"><button class="tile" id="alr-open" style="width:100%">' +
+    '<span class="ic">' + I.alert + "</span>" +
+    '<span class="tx"><b>Alertas</b><span>' + (alerts.length ? "Toca para ver el detalle" : "Sin alertas pendientes") + "</span></span>" +
+    '<span class="pill ' + (critN ? "crit" : alerts.length ? "warn" : "ok") + '"><span class="dot"></span>' + alerts.length + "</span></button></div>";
+  const alertsDrawerBody = alerts.length
+    ? '<div class="card" style="box-shadow:none;border:0">' + alerts.map(a =>
         '<div class="row" ' + (a.kind === "detenido" ? 'data-alert-order="' + a.orderId + '"' : 'data-alert-truck="' + a.truckId + '"') + ' style="cursor:pointer">' +
         '<span class="sev-stripe ' + (a.cls === "crit" ? "sev-alta" : "sev-media") + '"></span><div class="rl"><div class="t">' + iconSpan(a.kind === "doc" ? "doc" : "wrench") + esc(a.text) + "</div></div><span class='arrow'>" + I.arrow + "</span></div>"
-      ).join("") + (alerts.length > alertsTop.length ? '<div class="row" id="alr-more" style="cursor:pointer;justify-content:center"><span class="meta-line">+ ' + (alerts.length - alertsTop.length) + " más</span></div>" : "") + "</div></div>"
-    : "";
+      ).join("") + "</div>"
+    : '<div class="empty">' + I.check + "<div>Sin alertas. Flota al día.</div></div>";
 
   const navBtns = ['<button class="btn btn-ghost" id="nav-camiones" style="flex:1;min-width:140px">' + I.truck + "Camiones</button>"];
   if (can(p, "plan.view")) navBtns.push('<button class="btn btn-ghost" id="nav-plan" style="flex:1;min-width:140px">' + I.route + "Planificación</button>");
@@ -149,20 +153,6 @@ async function dashboard(view, ctx) {
   if (can(p, "user.manage")) navBtns.push('<button class="btn btn-ghost" id="nav-empresa" style="flex:1;min-width:140px">' + I.gear + "Empresa</button>");
   if (can(p, "data.import")) navBtns.push('<button class="btn btn-ghost" id="nav-importar" style="flex:1;min-width:140px">' + I.upload + "Importar</button>");
   const navRow = '<div class="section" style="display:flex;flex-wrap:wrap;gap:10px">' + navBtns.join("") + "</div>";
-
-  const fallaCards = !can(p, "falla.view") ? "" :
-    ('<div class="section"><div class="subhead"><h2>Fallas por gestionar</h2></div><div class="card">' +
-      (fallas.length ? fallas.map(f => {
-        const t = trucks.find(x => x.id === f.truckId) || { num: "?", patente: "" };
-        return '<div class="row"><span class="sev-stripe sev-' + f.sev + '"></span><div class="rl">' +
-          '<div class="t">' + esc(f.titulo) + ' <span class="pill ' + (f.sev === "alta" ? "crit" : f.sev === "media" ? "warn" : "neutral") + '">' + ({ alta: "Alta", media: "Media", baja: "Baja" }[f.sev]) + "</span></div>" +
-          '<div class="m"><span>' + iconSpan("truck") + esc(t.num + " · " + t.patente) + "</span><span>" + esc(f.origen) + "</span><span>" + fmtDateTime(f.ts) + "</span></div>" +
-          (f.detalle ? '<div style="font-size:.86rem;margin-top:4px;color:var(--ink-2)">' + esc(f.detalle) + "</div>" : "") +
-          (manage ? '<div style="margin-top:10px;display:flex;gap:8px"><button class="btn sm btn-steel" data-order="' + esc(f.id) + '">' + I.wrench + "Crear orden</button>" +
-            '<button class="btn sm btn-soft" data-resolve="' + esc(f.id) + '">Descartar</button></div>' : "") +
-          "</div></div>";
-      }).join("") : '<div class="empty">' + I.check + "<div>No hay fallas pendientes. Flota al día.</div></div>") +
-      "</div></div>");
 
   const descRecientes = resolvedDocs.slice(0, 5);
   const descBlock = (!can(p, "falla.view") || !descRecientes.length) ? "" :
@@ -177,20 +167,31 @@ async function dashboard(view, ctx) {
       }).join("") + "</div></div>");
 
   const openList = openOrders.sort((a, b) => b.createdAt - a.createdAt);
-  const orderCards = '<div class="section"><div class="subhead"><h2>Órdenes de taller</h2><span class="pill steel">' + openOrders.length + ' abiertas</span></div><div class="card">' +
-    (openList.length ? openList.map(o => orderRow(o, trucks)).join("") : '<div class="empty">' + I.wrench + "<div>Sin órdenes de taller abiertas</div></div>") + "</div></div>";
+  const done = orders.filter(o => o.estado === "completado").sort((a, b) => b.completedAt - a.completedAt).slice(0, 6);
+  // Tarjeta clicable → abre el listado de órdenes en panel lateral.
+  const ordersCard = '<div class="section"><button class="tile" id="ord-open" style="width:100%">' +
+    '<span class="ic">' + I.wrench + "</span>" +
+    '<span class="tx"><b>Órdenes de taller</b><span>' + (openOrders.length ? "Ver y editar las órdenes" : "Sin órdenes abiertas") + "</span></span>" +
+    '<span class="pill steel">' + openOrders.length + " abiertas</span></button></div>";
+  const ordersDrawerBody =
+    '<span class="eyebrow" style="display:block;margin:0 0 8px">Abiertas (' + openList.length + ")</span>" +
+    '<div class="card" style="box-shadow:none;border:0">' +
+      (openList.length ? openList.map(o => orderRow(o, trucks)).join("") : '<div class="empty">' + I.wrench + "<div>Sin órdenes de taller abiertas</div></div>") + "</div>" +
+    (done.length ? '<span class="eyebrow" style="display:block;margin:14px 0 8px">Completadas recientes</span><div class="card" style="box-shadow:none;border:0">' + done.map(o => orderRow(o, trucks)).join("") + "</div>" : "");
 
-  const done = orders.filter(o => o.estado === "completado").sort((a, b) => b.completedAt - a.completedAt).slice(0, 4);
-  const doneBlock = done.length ? '<div class="section"><span class="eyebrow">Últimas completadas</span><div class="card" style="margin-top:8px">' + done.map(o => orderRow(o, trucks)).join("") + "</div></div>" : "";
-
-  view.innerHTML = alertsSection + kpis + availBoard + navRow + fallaCards + descBlock + orderCards + doneBlock;
+  view.innerHTML = kpis + availBoard + alertsCard + ordersCard + navRow + descBlock;
 
   $$("[data-avail]", view).forEach(b => b.onclick = () => availSheet(ctx, b.getAttribute("data-avail"), trucks, orders, fallas));
   $$("[data-kpi]", view).forEach(b => b.onclick = () => kpiDetail(ctx, b.getAttribute("data-kpi"), { trucks, orders, fallas, avail, openOrders, mesTotal }));
-  $$("[data-alert-truck]", view).forEach(b => b.onclick = () => ctx.go("truckDetail", { id: b.getAttribute("data-alert-truck") }));
-  $$("[data-alert-order]", view).forEach(b => b.onclick = () => { orderDraft = null; ctx.go("order", { id: b.getAttribute("data-alert-order") }); });
-  const aa = $("#alr-all", view); if (aa) aa.onclick = () => ctx.go("alertas", {});
-  const am = $("#alr-more", view); if (am) am.onclick = () => ctx.go("alertas", {});
+  // Alertas → panel lateral
+  $("#alr-open", view).onclick = () => openDrawer("Alertas (" + alerts.length + ")", alertsDrawerBody, () => {
+    $$("[data-alert-truck]").forEach(b => b.onclick = () => { closeSheet(); ctx.go("truckDetail", { id: b.getAttribute("data-alert-truck") }); });
+    $$("[data-alert-order]").forEach(b => b.onclick = () => { closeSheet(); orderDraft = null; ctx.go("order", { id: b.getAttribute("data-alert-order") }); });
+  });
+  // Órdenes de taller → panel lateral con el listado
+  $("#ord-open", view).onclick = () => openDrawer("Órdenes de taller", ordersDrawerBody, () => {
+    $$("[data-openorder]").forEach(b => b.onclick = () => { closeSheet(); orderDraft = null; ctx.go("order", { id: b.getAttribute("data-openorder") }); });
+  });
   $("#nav-camiones", view).onclick = () => ctx.go("camiones", {});
   const nplan = $("#nav-plan", view); if (nplan) nplan.onclick = () => ctx.go("planificacion", {});
   const nch = $("#nav-climahist", view); if (nch) nch.onclick = () => ctx.go("climahist", {});
@@ -200,9 +201,6 @@ async function dashboard(view, ctx) {
   const nu = $("#nav-usuarios", view); if (nu) nu.onclick = () => ctx.go("usuarios", {});
   const ne = $("#nav-empresa", view); if (ne) ne.onclick = () => ctx.go("empresa", {});
   const ni = $("#nav-importar", view); if (ni) ni.onclick = () => ctx.go("importar", {});
-  $$("[data-order]", view).forEach(b => b.onclick = () => createOrder(ctx, b.getAttribute("data-order"), fallas));
-  $$("[data-resolve]", view).forEach(b => b.onclick = () => resolveFalla(ctx, b.getAttribute("data-resolve"), fallas));
-  $$("[data-openorder]", view).forEach(b => b.onclick = () => { orderDraft = null; ctx.go("order", { id: b.getAttribute("data-openorder") }); });
 
   // Sincronización automática del historial de clima (una vez al día).
   autoSyncClimaHistBg(p);
@@ -221,8 +219,12 @@ function kpiDetail(ctx, key, D) {
       '<div class="row" data-k-truck="' + t.id + '" style="cursor:pointer"><span class="trucknum">' + esc(t.num) + '</span><div class="rl"><div class="t">' + esc(t.marca + " " + (t.modelo || "")) + '</div><div class="m"><span>' + esc(t.patente) + '</span></div></div><span class="pill ' + a.cls + '"><span class="dot"></span>' + a.label + "</span></div>").join("");
   } else if (key === "fallas") {
     title = "Fallas por gestionar";
+    const manage = can(ctx.profile, "order.manage");
     body = D.fallas.length ? D.fallas.map(f => { const t = D.trucks.find(x => x.id === f.truckId) || { num: "?" };
-      return '<div class="row"><span class="sev-stripe sev-' + f.sev + '"></span><div class="rl"><div class="t">' + esc(f.titulo) + '</div><div class="m"><span>' + esc(t.num) + "</span><span>" + esc(f.origen) + "</span><span>" + fmtDateTime(f.ts) + "</span></div></div></div>"; }).join("")
+      return '<div class="row"><span class="sev-stripe sev-' + f.sev + '"></span><div class="rl"><div class="t">' + esc(f.titulo) + ' <span class="pill ' + (f.sev === "alta" ? "crit" : f.sev === "media" ? "warn" : "neutral") + '">' + ({ alta: "Alta", media: "Media", baja: "Baja" }[f.sev]) + "</span></div><div class=\"m\"><span>" + esc(t.num) + "</span><span>" + esc(f.origen) + "</span><span>" + fmtDateTime(f.ts) + "</span></div>" +
+        (f.detalle ? '<div style="font-size:.85rem;margin-top:4px;color:var(--ink-2)">' + esc(f.detalle) + "</div>" : "") +
+        (manage ? '<div style="margin-top:10px;display:flex;gap:8px"><button class="btn sm btn-steel" data-order="' + esc(f.id) + '">' + I.wrench + "Crear orden</button><button class=\"btn sm btn-soft\" data-resolve=\"" + esc(f.id) + "\">Descartar</button></div>" : "") +
+        "</div></div>"; }).join("")
       : '<div class="empty">' + I.check + "<div>Sin fallas pendientes</div></div>";
   } else if (key === "ordenes") {
     title = "Órdenes de taller abiertas";
@@ -240,6 +242,8 @@ function kpiDetail(ctx, key, D) {
   openSheet(title, '<div class="card" style="box-shadow:none;border:0">' + body + "</div>", () => {
     $$("[data-k-truck]").forEach(b => b.onclick = () => { closeSheet(); ctx.go("resumen", { id: b.getAttribute("data-k-truck"), from: "home" }); });
     $$("[data-k-order]").forEach(b => b.onclick = () => { closeSheet(); orderDraft = null; ctx.go("order", { id: b.getAttribute("data-k-order") }); });
+    $$("[data-order]").forEach(b => b.onclick = () => { closeSheet(); createOrder(ctx, b.getAttribute("data-order"), D.fallas); });
+    $$("[data-resolve]").forEach(b => b.onclick = () => { closeSheet(); resolveFalla(ctx, b.getAttribute("data-resolve"), D.fallas); });
   });
 }
 function orderRow(o, trucks) {

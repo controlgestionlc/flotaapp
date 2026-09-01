@@ -117,6 +117,22 @@ export function closeSheet() {
   const s = $("#sheet-scrim"); if (s) s.remove();
 }
 
+// ---- panel lateral (drawer) ----
+// Comparte el id #sheet-scrim para que closeSheet() también lo cierre.
+export function openDrawer(title, bodyHTML, after) {
+  closeSheet();
+  const sc = document.createElement("div");
+  sc.className = "scrim drawer-scrim"; sc.id = "sheet-scrim";
+  sc.innerHTML =
+    '<div class="drawer"><div class="drawer-h"><h3>' + esc(title) +
+    '</h3><button class="iconbtn" id="sheet-x" style="border-color:var(--line);background:var(--surface-2);color:var(--ink)">' +
+    I.x + '</button></div><div class="drawer-b">' + bodyHTML + "</div></div>";
+  document.body.appendChild(sc);
+  sc.onclick = e => { if (e.target === sc) closeSheet(); };
+  $("#sheet-x").onclick = closeSheet;
+  if (after) after();
+}
+
 // ---- GPS ----
 export function captureGPS(cb) {
   if (!navigator.geolocation) { cb(null, "no-soportado"); return; }
