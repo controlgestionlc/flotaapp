@@ -340,6 +340,9 @@ hr.sep{border:0;border-top:1px solid var(--line);margin:16px 0}
   .dash-two{flex-direction:row}
   .dash-two > .tile{flex:1;min-width:0;width:auto}
   h1{font-size:1.7rem}
+  /* Ventanas flotantes centradas en pantalla (no pegadas abajo) */
+  .scrim{align-items:center}
+  .sheet{border-radius:18px;max-height:85vh}
 }
 @media (min-width:1180px){
   .app{max-width:1200px}
