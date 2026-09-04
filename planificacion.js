@@ -972,9 +972,12 @@ async function climaScreen(view, ctx) {
       const lbl = DIAS[(dt.getDay() + 6) % 7];
       const wd = wmoDesc(dd.code);
       const col = ev.k === "condicionada" ? "var(--warn)" : "var(--ok)";
+      const tMax = dd.tmax != null ? Math.round(dd.tmax) + "°" : "-";
+      const tMin = dd.tmin != null ? Math.round(dd.tmin) + "°" : "-";
       return '<div class="cw-day"><span class="cw-d">' + lbl + "</span><span class='cw-e'>" + wd.e + "</span>" +
         '<span class="cw-dot" style="background:' + col + '"></span>' +
-        '<span class="cw-p">' + (dd.precip24 != null ? Math.round(dd.precip24) + "mm" : "-") + "</span></div>";
+        '<span class="cw-p">' + (dd.precip24 != null ? Math.round(dd.precip24) + "mm" : "-") + "</span>" +
+        '<span class="cw-t"><b>' + tMax + '</b> / ' + tMin + "</span></div>";
     }).join("") + "</div>" : "";
     const stripBlock = strip ? '<div class="meta-line" style="font-size:.72rem;margin:10px 2px 2px">Pronóstico de la semana (riesgo de acceso):</div>' + strip : "";
     return '<div class="card pad section"><div class="subhead" style="margin:0"><h2 style="font-size:1.05rem">' + esc(f.nombre) + "</h2>" +

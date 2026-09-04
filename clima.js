@@ -16,7 +16,7 @@ export async function fetchFaenaClima(f) {
   if (!hasCoords(f)) throw new Error("La faena no tiene coordenadas");
   const url = API + "?latitude=" + encodeURIComponent(f.lat) + "&longitude=" + encodeURIComponent(f.lng) +
     "&current=temperature_2m,precipitation,wind_speed_10m,weather_code" +
-    "&daily=weather_code,temperature_2m_max,precipitation_sum,precipitation_probability_max,wind_speed_10m_max" +
+    "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max" +
     "&timezone=auto&forecast_days=7";
   const res = await fetch(url);
   if (!res.ok) throw new Error("Servicio de clima no disponible (" + res.status + ")");
@@ -27,6 +27,7 @@ export async function fetchFaenaClima(f) {
     fecha: fecha,
     code: n(d.weather_code, i),
     tmax: n(d.temperature_2m_max, i),
+    tmin: n(d.temperature_2m_min, i),
     precip24: n(d.precipitation_sum, i),
     probLluvia: n(d.precipitation_probability_max, i),
     windKmh: n(d.wind_speed_10m_max, i)

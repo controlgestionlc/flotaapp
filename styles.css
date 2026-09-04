@@ -294,6 +294,9 @@ hr.sep{border:0;border-top:1px solid var(--line);margin:16px 0}
 .cw-day .cw-e{font-size:1rem;line-height:1}
 .cw-day .cw-dot{width:9px;height:9px;border-radius:50%}
 .cw-day .cw-p{font-size:.68rem;color:var(--muted)}
+.cw-day .cw-t{font-size:.68rem;color:var(--ink-2);white-space:nowrap}
+.cw-day .cw-t b{color:var(--ink);font-weight:700}
+.cw-day{min-width:52px}
 
 /* planificación de flota */
 .pl-weeknav{display:flex;align-items:center;justify-content:space-between;gap:10px}
