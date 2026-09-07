@@ -467,8 +467,10 @@ async function orderDetail(view, ctx) {
   };
   const d = orderDraft;
   const e = EST[o.estado];
-  const estados = ["pendiente", "agendado", "en_taller", "completado"];
+  // El estado "Completado" se gestiona abajo (cierre de la orden), no en este selector.
+  const estados = ["pendiente", "agendado", "en_taller"];
   const estChips = estados.map(s => '<button class="chip' + (d.estado === s ? " on" : "") + '" data-est="' + s + '"' + (editable ? "" : " disabled") + ">" + EST[s].l + "</button>").join("");
+  const needTrabajo = d.estado === "completado" && !String(d.trabajo || "").trim();
   const reps = d.repuestos.map((r, i) =>
     '<div class="rep-row"><input class="input" data-rep="' + i + '" data-f="desc" placeholder="Repuesto / descripción" value="' + esc(r.desc || "") + '">' +
     '<input class="input cost num" data-rep="' + i + '" data-f="costo" inputmode="numeric" placeholder="$" value="' + esc(r.costo || "") + '">' +
@@ -484,6 +486,13 @@ async function orderDetail(view, ctx) {
   const descBtn = (editable && !esDesc && o.estado !== "completado")
     ? '<div class="section"><button class="btn btn-soft" id="o-descartar" style="width:100%;color:var(--crit)">Descartar orden</button>' +
       '<div class="meta-line" style="font-size:.78rem;margin-top:6px;text-align:center">Anula la orden y deja el camión disponible. El reporte del chofer se conserva.</div></div>'
+    : "";
+  // Cierre de la orden (Completado). Requiere describir el trabajo realizado.
+  const completeCard = (editable && !esDesc)
+    ? '<div class="card pad section"><span class="eyebrow" style="display:block;margin-bottom:10px">Cierre de la orden</span>' +
+      '<button class="chip' + (d.estado === "completado" ? " on" : "") + '" id="o-complete" style="width:100%;justify-content:center;padding:12px 14px">' +
+      (d.estado === "completado" ? I.check + "Completada (toca para revertir)" : "Marcar como completada") + "</button>" +
+      '<div id="o-complete-hint" class="meta-line" style="font-size:.8rem;margin-top:8px;color:var(--crit);display:' + (needTrabajo ? "block" : "none") + '">Escribe el trabajo realizado para poder guardar como completada.</div></div>'
     : "";
 
   view.innerHTML =
@@ -506,10 +515,11 @@ async function orderDetail(view, ctx) {
       '<span class="lb" style="display:block;font-family:Barlow Semi Condensed;font-weight:600;font-size:.82rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-2);margin-bottom:8px">Repuestos</span>' +
       '<div id="rep-list">' + reps + "</div>" +
       (editable ? '<button class="btn sm btn-soft" id="o-addrep" style="margin-bottom:14px">' + I.plus + "Agregar repuesto</button>" : "") +
-      '<label class="fld"><span class="lb">Mano de obra</span><input class="input num" id="o-mano" inputmode="numeric" placeholder="$" value="' + esc(d.manoObra) + '"' + (editable ? "" : " disabled") + "></label>" +
+      '<label class="fld"><span class="lb">Monto neto de la reparación</span><input class="input num" id="o-mano" inputmode="numeric" placeholder="$" value="' + esc(d.manoObra) + '"' + (editable ? "" : " disabled") + "></label>" +
       '<div class="total-line"><span class="eyebrow">Costo total</span><b class="num">' + fmtCLP(total) + "</b></div></div>" : "") +
+    completeCard +
     descBtn +
-    (editable && !esDesc ? '<div class="formbar"><button class="btn btn-primary" id="o-save">' + I.check + "Guardar orden</button></div>" : "");
+    (editable && !esDesc ? '<div class="formbar"><button class="btn btn-primary" id="o-save"' + (needTrabajo ? " disabled" : "") + ">" + I.check + "Guardar orden</button></div>" : "");
 
   const backFromOrder = () => {
     orderDraft = null;
@@ -521,7 +531,16 @@ async function orderDetail(view, ctx) {
   if (!editable || esDesc) return;
   const bd = $("#o-descartar", view); if (bd) bd.onclick = () => descartarOrden(ctx, o);
   $$("[data-est]", view).forEach(b => b.onclick = () => { syncOrder(view); d.estado = b.getAttribute("data-est"); orderDetail(view, ctx); });
-  const bindF = (id, f) => { const el = $(id, view); if (el) el.oninput = () => { d[f] = el.value; }; };
+  // Habilita/inhabilita "Guardar" según si falta el trabajo para completar.
+  const updateSaveState = () => {
+    const sb = $("#o-save", view); const h = $("#o-complete-hint", view);
+    const need = d.estado === "completado" && !String(d.trabajo || "").trim();
+    if (sb) sb.disabled = need;
+    if (h) h.style.display = need ? "block" : "none";
+  };
+  const cbtn = $("#o-complete", view);
+  if (cbtn) cbtn.onclick = () => { syncOrder(view); d.estado = d.estado === "completado" ? "en_taller" : "completado"; orderDetail(view, ctx); };
+  const bindF = (id, f) => { const el = $(id, view); if (el) el.oninput = () => { d[f] = el.value; if (f === "trabajo") updateSaveState(); }; };
   bindF("#o-taller", "taller"); bindF("#o-trabajo", "trabajo"); bindF("#o-mano", "manoObra"); bindF("#o-estim", "estim");
   const fecha = $("#o-fecha", view); if (fecha) fecha.onchange = () => { d.fecha = fecha.value; };
   const entrega = $("#o-entrega", view); if (entrega) entrega.onchange = () => { d.entrega = entrega.value; };
@@ -591,7 +610,7 @@ async function printOrden(o, t) {
     (o.trabajo ? '<div class="po-sec"><h2>Trabajo realizado</h2><p>' + esc(o.trabajo) + "</p></div>" : "") +
     '<div class="po-sec"><h2>Repuestos y costos</h2><table class="po-table"><thead><tr><th>Descripción</th><th class="r">Costo</th></tr></thead><tbody>' +
       repRows +
-      '<tr><td class="r">Mano de obra</td><td class="r">' + fmtCLP(mano) + "</td></tr>" +
+      '<tr><td class="r">Monto neto de la reparación</td><td class="r">' + fmtCLP(mano) + "</td></tr>" +
       '<tr class="po-tot"><td class="r">TOTAL</td><td class="r">' + fmtCLP(total) + "</td></tr>" +
       "</tbody></table></div>" +
     '<div class="po-sign"><div>_____________________<br>Responsable de taller</div><div>_____________________<br>Recibí conforme</div></div>' +
