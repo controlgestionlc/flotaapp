@@ -456,7 +456,8 @@ async function orderDetail(view, ctx) {
   if (!o) return dashboard(view, ctx);
   const t = trucks.find(x => x.id === o.truckId) || { num: "?", marca: "", patente: "" };
   const editable = can(ctx.profile, "order.manage");
-  if (!orderDraft) orderDraft = {
+  if (!orderDraft || orderDraft.__id !== o.id) orderDraft = {
+    __id: o.id,
     estado: o.estado, taller: o.taller || "", fecha: o.fechaAgendada ? dInput(o.fechaAgendada) : "",
     estim: o.costoEstimado || "", entrega: o.fechaEntregaEstimada ? dInput(o.fechaEntregaEstimada) : "",
     trabajo: o.trabajo || "", manoObra: o.manoObra || "", repuestos: (o.repuestos || []).map(r => ({ desc: r.desc, costo: r.costo }))
@@ -507,7 +508,12 @@ async function orderDetail(view, ctx) {
     descBtn +
     (editable && !esDesc ? '<div class="formbar"><button class="btn btn-primary" id="o-save">' + I.check + "Guardar orden</button></div>" : "");
 
-  $("#o-back", view).onclick = () => { orderDraft = null; ctx.go("home", {}); };
+  const backFromOrder = () => {
+    orderDraft = null;
+    if (ctx.params.truckId) ctx.go("resumen", { id: ctx.params.truckId, from: ctx.params.from || "home" });
+    else ctx.go("home", {});
+  };
+  $("#o-back", view).onclick = backFromOrder;
   const bpr = $("#o-print", view); if (bpr) bpr.onclick = () => printOrden(o, t);
   if (!editable || esDesc) return;
   const bd = $("#o-descartar", view); if (bd) bd.onclick = () => descartarOrden(ctx, o);
@@ -536,7 +542,7 @@ async function orderDetail(view, ctx) {
       descartada: null
     };
     const btn = $("#o-save", view); btn.disabled = true; btn.textContent = "Guardando...";
-    try { await store.saveOrder(o.id, Object.assign({}, o, patch)); orderDraft = null; toast("Orden actualizada", "ok"); ctx.go("home", {}); }
+    try { await store.saveOrder(o.id, Object.assign({}, o, patch)); orderDraft = null; toast("Orden actualizada", "ok"); backFromOrder(); }
     catch (e) { toast("No se pudo guardar: " + (e.message || e), "err"); btn.disabled = false; btn.textContent = "Guardar orden"; }
   };
 }

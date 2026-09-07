@@ -1,6 +1,6 @@
 import { store } from "./store.js";
 import { DOC_TYPES } from "./checklist.js";
-import { I, esc, fmtCLP, fmtDate, fmtDateTime, docStatus, iconSpan, emptyBox, $ } from "./ui.js";
+import { I, esc, fmtCLP, fmtDate, fmtDateTime, docStatus, iconSpan, emptyBox, $, $$ } from "./ui.js";
 
 const EST = { pendiente: "Pendiente", agendado: "Agendado", en_taller: "En taller", completado: "Completado", descartada: "Descartada" };
 function orderTotal(o) { return (o.repuestos || []).reduce((s, x) => s + (Number(x.costo) || 0), 0) + (Number(o.manoObra) || 0); }
@@ -69,9 +69,9 @@ export async function renderResumen(view, ctx) {
   }).join("");
 
   const ordersBlock = tOrders.length ? tOrders.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 5).map(o =>
-    '<div class="row"><div class="rl"><div class="t">' + esc(o.titulo) + ' <span class="pill ' + (o.estado === "completado" ? "ok" : o.estado === "en_taller" ? "crit" : o.estado === "descartada" ? "neutral" : "warn") + '">' + EST[o.estado] + "</span></div>" +
+    '<div class="row" data-order="' + esc(o.id) + '" style="cursor:pointer"><div class="rl"><div class="t">' + esc(o.titulo) + ' <span class="pill ' + (o.estado === "completado" ? "ok" : o.estado === "en_taller" ? "crit" : o.estado === "descartada" ? "neutral" : "warn") + '">' + EST[o.estado] + "</span></div>" +
     '<div class="m">' + (o.otNumero ? "<span>" + esc(o.otNumero) + "</span>" : "") + (o.taller ? "<span>" + esc(o.taller) + "</span>" : "") +
-    (o.estado === "completado" ? '<span class="num" style="color:var(--ink);font-weight:600">' + fmtCLP(orderTotal(o)) + "</span>" : "") + "</div></div></div>"
+    (o.estado === "completado" ? '<span class="num" style="color:var(--ink);font-weight:600">' + fmtCLP(orderTotal(o)) + "</span>" : "") + "</div></div><span class='arrow'>" + I.arrow + "</span></div>"
   ).join("") : emptyBox("Sin órdenes de taller");
 
   const volTxt = (m3 ? nf(m3) + " M3" : "") + (m3 && mr ? " · " : "") + (mr ? nf(mr) + " MR" : "") || "0";
@@ -93,4 +93,5 @@ export async function renderResumen(view, ctx) {
     '<div class="section"><span class="eyebrow">Últimos viajes</span><div class="card" style="margin-top:8px">' + tripsBlock + "</div></div>";
 
   $("#rs-back", view).onclick = goBack;
+  $$("[data-order]", view).forEach(b => b.onclick = () => ctx.go("order", { id: b.getAttribute("data-order"), from: ctx.params.from, truckId: id }));
 }
