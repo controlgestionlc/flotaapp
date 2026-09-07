@@ -69,10 +69,22 @@ export function permsForRole(role) {
 }
 
 // ¿Puede este usuario ejecutar la acción?
+// Si el usuario tiene una lista propia de permisos (user.perms), esa manda;
+// si no, se usan los permisos por defecto de su rol.
 export function can(user, perm) {
   if (!user || !user.role) return false;
+  if (Array.isArray(user.perms)) return user.perms.includes(perm);
   return permsForRole(user.role).has(perm);
 }
+
+// Permisos efectivos del usuario (personalizados o los del rol), como Set.
+export function effectivePerms(user) {
+  if (user && Array.isArray(user.perms)) return new Set(user.perms);
+  return permsForRole(user && user.role);
+}
+
+// Lista de todas las claves de permiso.
+export function allPerms() { return Object.keys(PERMISSIONS); }
 
 export function roleLabel(role) {
   return (ROLES[role] && ROLES[role].label) || role || "Sin rol";

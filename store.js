@@ -157,12 +157,13 @@ function demoAdapter() {
       const u = db.users.find(x => x.uid === uid); if (!u) return null;
       const { _pw, ...safe } = u; return clone(safe);
     },
-    async createAuthUser({ email, password, nombre, role }) {
+    async createAuthUser({ email, password, nombre, role, perms }) {
       if (db.users.some(x => x.email.toLowerCase() === email.toLowerCase())) {
         const e = new Error("Ya existe un usuario con ese correo"); e.code = "exists"; throw e;
       }
       const uid = "u_" + Math.random().toString(36).slice(2, 10);
       const u = { uid, email, nombre, role, activo: true, createdAt: Date.now(), _pw: password };
+      if (Array.isArray(perms)) u.perms = perms;
       db.users.push(u); save(db);
       const { _pw, ...safe } = u; return clone(safe);
     },
@@ -243,13 +244,14 @@ async function firebaseAdapter() {
     },
     // Crea el usuario de Auth en una app secundaria para no cerrar la
     // sesión del administrador, y guarda su perfil con rol en Firestore.
-    async createAuthUser({ email, password, nombre, role }) {
+    async createAuthUser({ email, password, nombre, role, perms }) {
       const secondary = appMod.initializeApp(FIREBASE_CONFIG, "secondary_" + Date.now());
       const secAuth = authMod.getAuth(secondary);
       try {
         const cred = await authMod.createUserWithEmailAndPassword(secAuth, email, password);
         const uid = cred.user.uid;
         const profile = { email, nombre, role, activo: true, createdAt: Date.now() };
+        if (Array.isArray(perms)) profile.perms = perms;
         await setDoc(doc(dbf, "users", uid), profile);
         await authMod.signOut(secAuth);
         return Object.assign({ uid }, profile);
@@ -330,7 +332,7 @@ export const store = {
   async getCompany() {
     let c = null;
     try { c = await A.get("config", "empresa"); } catch (e) { c = null; }
-    return Object.assign({ nombre: "Transportes La Cabaña", app: "Bitácora de Camiones", logo: "", avisoDias: 30 }, c || {});
+    return Object.assign({ nombre: "Transportes La Cabaña", app: "Bitácora de Camiones", logo: "", avisoDias: 30, rut: "", giro: "", direccion: "", comuna: "", fono: "", email: "" }, c || {});
   },
   async saveCompany(data) { return A.set("config", "empresa", Object.assign({ id: "empresa" }, data)); },
 

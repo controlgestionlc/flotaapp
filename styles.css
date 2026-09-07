@@ -129,7 +129,34 @@ a{color:var(--accent)}
   #print-area .wd-table th.r,#print-area .wd-table td.r{text-align:right}
   #print-area .wd-tot{margin-top:8px;font-size:12px;border-top:1px solid #000;padding-top:6px}
   .wd-day,.wd-table{page-break-inside:avoid}
+  /* Orden de taller impresa */
+  #print-area .po-head{display:flex;align-items:flex-start;gap:14px;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:14px}
+  #print-area .po-logo{width:88px;height:88px;object-fit:contain;flex:none}
+  #print-area .po-co{flex:1}
+  #print-area .po-co h1{font-size:18px;margin:0 0 4px}
+  #print-area .po-co div{font-size:11px;color:#333;line-height:1.4}
+  #print-area .po-doc{text-align:right;flex:none}
+  #print-area .po-doc-t{font-size:13px;font-weight:700;letter-spacing:.04em}
+  #print-area .po-ot{font-size:15px;font-weight:700;margin-top:4px}
+  #print-area .po-est{display:inline-block;margin-top:6px;font-size:11px;border:1px solid #000;border-radius:4px;padding:2px 8px}
+  #print-area .po-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 24px;margin-bottom:14px}
+  #print-area .po-f{display:flex;justify-content:space-between;gap:10px;font-size:12px;border-bottom:1px solid #ddd;padding:4px 0}
+  #print-area .po-f span{color:#555}
+  #print-area .po-sec{margin-bottom:14px;page-break-inside:avoid}
+  #print-area .po-sec h2{font-size:12px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #000;padding-bottom:3px;margin:0 0 6px}
+  #print-area .po-sec p{font-size:12px;margin:0;line-height:1.45}
+  #print-area .po-table{width:100%;border-collapse:collapse;font-size:12px}
+  #print-area .po-table th,#print-area .po-table td{border:1px solid #999;padding:5px 8px;text-align:left}
+  #print-area .po-table th.r,#print-area .po-table td.r{text-align:right}
+  #print-area .po-table .po-tot td{font-weight:700;border-top:2px solid #000}
+  #print-area .po-sign{display:flex;justify-content:space-between;gap:40px;margin-top:36px;font-size:11px;text-align:center;color:#333}
+  #print-area .po-gen{margin-top:20px;font-size:10px;color:#666;border-top:1px solid #ccc;padding-top:6px}
 }
+/* Editor de permisos por usuario */
+.perm-list{display:flex;flex-direction:column;gap:2px;border-top:1px solid var(--line);padding-top:8px}
+.perm-row{display:flex;align-items:center;gap:10px;padding:8px 2px;font-size:.9rem;cursor:pointer}
+.perm-row input[type=checkbox]{width:18px;height:18px;flex:none}
+
 /* Panel lateral (drawer) */
 .scrim.drawer-scrim{align-items:stretch;justify-content:flex-end}
 .scrim.drawer-scrim-left{align-items:stretch;justify-content:flex-start}

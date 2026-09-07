@@ -3,7 +3,10 @@ import { I, esc, toast, $ } from "./ui.js";
 
 export async function renderEmpresa(view, ctx) {
   const co = await store.getCompany();
-  const draft = { nombre: co.nombre || "", app: co.app || "", logo: co.logo || "", avisoDias: co.avisoDias || 30 };
+  const draft = {
+    nombre: co.nombre || "", app: co.app || "", logo: co.logo || "", avisoDias: co.avisoDias || 30,
+    rut: co.rut || "", giro: co.giro || "", direccion: co.direccion || "", comuna: co.comuna || "", fono: co.fono || "", email: co.email || ""
+  };
 
   function paint() {
     view.innerHTML =
@@ -20,7 +23,13 @@ export async function renderEmpresa(view, ctx) {
             '<div class="meta-line" style="font-size:.76rem;margin-top:6px">Se guarda reducido (máx 240 px).</div>' +
           "</div>" +
         "</div>" +
-        '<label class="fld"><span class="lb">Nombre de la empresa</span><input class="input" id="em-nombre" value="' + esc(draft.nombre) + '"></label>' +
+        '<label class="fld"><span class="lb">Nombre / Razón social</span><input class="input" id="em-nombre" value="' + esc(draft.nombre) + '"></label>' +
+        '<div class="grid2"><label class="fld"><span class="lb">RUT</span><input class="input" id="em-rut" placeholder="76.123.456-7" value="' + esc(draft.rut) + '"></label>' +
+        '<label class="fld"><span class="lb">Giro</span><input class="input" id="em-giro" placeholder="Transporte de carga" value="' + esc(draft.giro) + '"></label></div>' +
+        '<label class="fld"><span class="lb">Dirección</span><input class="input" id="em-dir" placeholder="Calle y número" value="' + esc(draft.direccion) + '"></label>' +
+        '<div class="grid2"><label class="fld"><span class="lb">Comuna / Ciudad</span><input class="input" id="em-comuna" placeholder="Angol" value="' + esc(draft.comuna) + '"></label>' +
+        '<label class="fld"><span class="lb">Teléfono</span><input class="input" id="em-fono" placeholder="+56 9 ..." value="' + esc(draft.fono) + '"></label></div>' +
+        '<label class="fld"><span class="lb">Correo</span><input class="input" id="em-email" type="email" placeholder="contacto@empresa.cl" value="' + esc(draft.email) + '"></label>' +
         '<label class="fld"><span class="lb">Nombre de la app</span><input class="input" id="em-app" value="' + esc(draft.app) + '"></label>' +
         '<label class="fld" style="margin-bottom:0"><span class="lb">Avisar documentos por vencer con (días de antelación)</span><input class="input num" id="em-aviso" inputmode="numeric" placeholder="30" value="' + esc(draft.avisoDias) + '"></label>' +
       "</div>" +
@@ -30,6 +39,12 @@ export async function renderEmpresa(view, ctx) {
     $("#em-nombre", view).oninput = e => { draft.nombre = e.target.value; };
     $("#em-app", view).oninput = e => { draft.app = e.target.value; };
     $("#em-aviso", view).oninput = e => { draft.avisoDias = e.target.value; };
+    $("#em-rut", view).oninput = e => { draft.rut = e.target.value; };
+    $("#em-giro", view).oninput = e => { draft.giro = e.target.value; };
+    $("#em-dir", view).oninput = e => { draft.direccion = e.target.value; };
+    $("#em-comuna", view).oninput = e => { draft.comuna = e.target.value; };
+    $("#em-fono", view).oninput = e => { draft.fono = e.target.value; };
+    $("#em-email", view).oninput = e => { draft.email = e.target.value; };
     $("#em-upload", view).onclick = () => $("#em-file", view).click();
     $("#em-file", view).onchange = e => {
       const f = e.target.files && e.target.files[0];
@@ -40,7 +55,10 @@ export async function renderEmpresa(view, ctx) {
       if (!draft.nombre.trim() || !draft.app.trim()) { toast("Completa el nombre de la empresa y de la app", "err"); return; }
       const btn = $("#em-save", view); btn.disabled = true; btn.textContent = "Guardando...";
       try {
-        await store.saveCompany({ nombre: draft.nombre.trim(), app: draft.app.trim(), logo: draft.logo || "", avisoDias: Math.max(1, Number(draft.avisoDias) || 30) });
+        await store.saveCompany({
+          nombre: draft.nombre.trim(), app: draft.app.trim(), logo: draft.logo || "", avisoDias: Math.max(1, Number(draft.avisoDias) || 30),
+          rut: draft.rut.trim(), giro: draft.giro.trim(), direccion: draft.direccion.trim(), comuna: draft.comuna.trim(), fono: draft.fono.trim(), email: draft.email.trim()
+        });
         await ctx.reloadCompany();
         toast("Datos de empresa guardados", "ok");
         ctx.go("home", {});

@@ -490,6 +490,7 @@ async function orderDetail(view, ctx) {
     '<div class="meta-line" style="margin-top:3px">' + esc(t.marca + " · " + t.patente) + (o.otNumero ? " · " + esc(o.otNumero) : "") + "</div></div></div>" +
     (o.detalle ? '<p style="margin:12px 0 0;font-size:.9rem;color:var(--ink-2)">' + esc(o.detalle) + "</p>" : "") +
     '<div class="meta-line" style="margin-top:8px;font-size:.8rem">Reportado por ' + esc(o.reportadoPor || "chofer") + " · " + fmtDateTime(o.createdAt) + "</div></div>" +
+    '<button class="btn btn-soft section" id="o-print">' + I.doc + "Imprimir orden / Guardar PDF</button>" +
     descBanner +
     '<div class="card pad section"><label class="fld"><span class="lb">Estado</span><div class="chips">' + estChips + "</div></label>" +
     '<label class="fld"><span class="lb">Taller</span><input class="input" id="o-taller" placeholder="Nombre del taller" value="' + esc(d.taller) + '"' + (editable ? "" : " disabled") + "></label>" +
@@ -507,6 +508,7 @@ async function orderDetail(view, ctx) {
     (editable && !esDesc ? '<div class="formbar"><button class="btn btn-primary" id="o-save">' + I.check + "Guardar orden</button></div>" : "");
 
   $("#o-back", view).onclick = () => { orderDraft = null; ctx.go("home", {}); };
+  const bpr = $("#o-print", view); if (bpr) bpr.onclick = () => printOrden(o, t);
   if (!editable || esDesc) return;
   const bd = $("#o-descartar", view); if (bd) bd.onclick = () => descartarOrden(ctx, o);
   $$("[data-est]", view).forEach(b => b.onclick = () => { syncOrder(view); d.estado = b.getAttribute("data-est"); orderDetail(view, ctx); });
@@ -537,6 +539,58 @@ async function orderDetail(view, ctx) {
     try { await store.saveOrder(o.id, Object.assign({}, o, patch)); orderDraft = null; toast("Orden actualizada", "ok"); ctx.go("home", {}); }
     catch (e) { toast("No se pudo guardar: " + (e.message || e), "err"); btn.disabled = false; btn.textContent = "Guardar orden"; }
   };
+}
+
+// Formato de impresión de la orden de taller con logo y datos de la empresa.
+async function printOrden(o, t) {
+  let co = {}; try { co = await store.getCompany(); } catch (e) { co = {}; }
+  const old = document.getElementById("print-area"); if (old) old.remove();
+  const rep = (o.repuestos || []).filter(r => (r.desc && r.desc.trim()) || Number(r.costo));
+  const repRows = rep.length
+    ? rep.map(r => '<tr><td>' + esc(r.desc || "") + '</td><td class="r">' + fmtCLP(Number(r.costo) || 0) + "</td></tr>").join("")
+    : '<tr><td colspan="2" style="color:#777">Sin repuestos registrados</td></tr>';
+  const mano = Number(o.manoObra) || 0;
+  const total = orderTotal(o);
+  const est = EST[o.estado] || { l: "" };
+  const coLine = [co.giro, co.rut ? "RUT " + co.rut : ""].filter(Boolean).join(" · ");
+  const coAddr = [co.direccion, co.comuna].filter(Boolean).join(", ");
+  const coContact = [co.fono ? "Tel: " + co.fono : "", co.email].filter(Boolean).join(" · ");
+  const field = (k, v) => '<div class="po-f"><span>' + esc(k) + "</span><b>" + esc(v || "—") + "</b></div>";
+  const pa = document.createElement("div");
+  pa.id = "print-area";
+  pa.innerHTML =
+    '<div class="po-head">' + (co.logo ? '<img class="po-logo" src="' + esc(co.logo) + '">' : "") +
+      '<div class="po-co"><h1>' + esc(co.nombre || "") + "</h1>" +
+        (coLine ? "<div>" + esc(coLine) + "</div>" : "") +
+        (coAddr ? "<div>" + esc(coAddr) + "</div>" : "") +
+        (coContact ? "<div>" + esc(coContact) + "</div>" : "") + "</div>" +
+      '<div class="po-doc"><div class="po-doc-t">ORDEN DE TALLER</div>' +
+        (o.otNumero ? '<div class="po-ot">' + esc(o.otNumero) + "</div>" : "") +
+        '<div class="po-est">' + esc(est.l) + "</div></div>" +
+    "</div>" +
+    '<div class="po-grid">' +
+      field("Camión", t.num + (t.marca ? " · " + t.marca + " " + (t.modelo || "") : "")) +
+      field("Patente", t.patente) +
+      field("Fecha de emisión", fmtDate(Date.now())) +
+      field("Reportado por", o.reportadoPor || "") +
+      field("Taller", o.taller) +
+      field("Fecha agendada", o.fechaAgendada ? fmtDate(o.fechaAgendada) : "") +
+      field("Entrega estimada", o.fechaEntregaEstimada ? fmtDate(o.fechaEntregaEstimada) : "") +
+      field("Costo estimado", o.costoEstimado ? fmtCLP(o.costoEstimado) : "") +
+    "</div>" +
+    '<div class="po-sec"><h2>Problema / motivo</h2><p>' + esc(o.titulo || "") + (o.detalle ? "<br>" + esc(o.detalle) : "") + "</p></div>" +
+    (o.trabajo ? '<div class="po-sec"><h2>Trabajo realizado</h2><p>' + esc(o.trabajo) + "</p></div>" : "") +
+    '<div class="po-sec"><h2>Repuestos y costos</h2><table class="po-table"><thead><tr><th>Descripción</th><th class="r">Costo</th></tr></thead><tbody>' +
+      repRows +
+      '<tr><td class="r">Mano de obra</td><td class="r">' + fmtCLP(mano) + "</td></tr>" +
+      '<tr class="po-tot"><td class="r">TOTAL</td><td class="r">' + fmtCLP(total) + "</td></tr>" +
+      "</tbody></table></div>" +
+    '<div class="po-sign"><div>_____________________<br>Responsable de taller</div><div>_____________________<br>Recibí conforme</div></div>' +
+    '<div class="po-gen">Generado: ' + fmtDateTime(Date.now()) + " · " + esc(co.app || "Bitácora de Camiones") + "</div>";
+  document.body.appendChild(pa);
+  const cleanup = () => { const p = document.getElementById("print-area"); if (p) p.remove(); window.removeEventListener("afterprint", cleanup); };
+  window.addEventListener("afterprint", cleanup);
+  setTimeout(() => { try { window.print(); } catch (e) {} setTimeout(cleanup, 2000); }, 80);
 }
 // Descartar (anular) una orden de taller con motivo obligatorio.
 // Conserva la orden y el reporte original del chofer; libera el camión.
