@@ -291,14 +291,12 @@ async function availSheet(ctx, truckId, trucks, orders, fallas) {
   if (fs.length) {
     if (a.order) body += '<div class="meta-line" style="margin:12px 0 6px;font-size:.82rem">Otras novedades reportadas (sin orden):</div>';
     body += '<div class="card" style="box-shadow:none">' + fs.map(f =>
-      '<div class="row"><span class="sev-stripe sev-' + f.sev + '"></span><div class="rl"><div class="t">' + esc(f.titulo) +
-      '</div><div class="m"><span>' + esc(f.origen) + "</span><span>" + fmtDate(f.ts) + "</span></div></div></div>").join("") + "</div>";
+      '<div class="row" data-falla="' + esc(f.id) + '" style="cursor:pointer"><span class="sev-stripe sev-' + f.sev + '"></span><div class="rl"><div class="t">' + esc(f.titulo) +
+      '</div><div class="m"><span>' + esc(f.origen) + "</span><span>" + fmtDate(f.ts) + "</span><span>Toca para crear orden</span></div></div><span class='arrow'>" + I.arrow + "</span></div>").join("") + "</div>";
   }
 
   if (can(ctx.profile, "order.manage") && a.order)
     body += '<button class="btn btn-primary" style="margin-top:14px" id="av-order">' + I.wrench + "Ver o editar la orden</button>";
-  if (can(ctx.profile, "order.manage") && fs.length)
-    body += '<button class="btn ' + (a.order ? "btn-soft" : "btn-primary") + '" style="margin-top:10px" id="av-crear">' + I.wrench + "Crear orden desde la novedad</button>";
   if (can(ctx.profile, "order.manage"))
     body += '<button class="btn btn-soft" style="margin-top:10px" id="av-gen">' + I.wrench + (a.order ? "Generar otra orden de taller" : "Generar orden de taller") + "</button>";
   if (can(ctx.profile, "truck.manage"))
@@ -309,7 +307,7 @@ async function availSheet(ctx, truckId, trucks, orders, fallas) {
 
   openSheet("Disponibilidad · " + t.num, body, () => {
     const bo = $("#av-order"); if (bo) bo.onclick = () => { closeSheet(); orderDraft = null; ctx.go("order", { id: a.order.id }); };
-    const bc = $("#av-crear"); if (bc) bc.onclick = () => { const fs = fallas.filter(f => f.truckId === truckId); closeSheet(); createOrder(ctx, fs[0].id, fallas); };
+    $$("[data-falla]").forEach(b => b.onclick = () => { const id = b.getAttribute("data-falla"); closeSheet(); createOrder(ctx, id, fallas); });
     const bg = $("#av-gen"); if (bg) bg.onclick = () => { closeSheet(); createOrder(ctx, null, fallas, truckId); };
     const ba = $("#av-assign"); if (ba) ba.onclick = () => { closeSheet(); asignarChofer(ctx, t); };
     const bfa = $("#av-falla"); if (bfa) bfa.onclick = () => { closeSheet(); reportarFallaAdmin(ctx, truckId, t.num); };
