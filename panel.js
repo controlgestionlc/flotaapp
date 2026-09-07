@@ -52,7 +52,10 @@ function truckStatus(id, orders, fallas) {
   if (fs.length || open.length) return { cls: "warn", label: "Con novedad" };
   return { cls: "ok", label: "Operativo" };
 }
-function orderTotal(o) { return (o.repuestos || []).reduce((s, x) => s + (Number(x.costo) || 0), 0) + (Number(o.manoObra) || 0); }
+function orderTotal(o) { return (o.repuestos || []).reduce((s, x) => s + (Number(x.costo) || 0), 0) + (Number(o.manoObra) || 0) + (Number(o.otrosGastos) || 0); }
+// Solo dígitos (para guardar) y formato con separador de miles (para mostrar).
+const soloNum = v => String(v == null ? "" : v).replace(/\D/g, "");
+const miles = v => { const s = soloNum(v); return s ? Number(s).toLocaleString("es-CL") : ""; };
 
 // Semáforo de disponibilidad operativa del camión.
 // verde = operativo · amarillo = observación · rojo = fuera de servicio
@@ -462,8 +465,9 @@ async function orderDetail(view, ctx) {
   if (!orderDraft || orderDraft.__id !== o.id) orderDraft = {
     __id: o.id,
     estado: o.estado, taller: o.taller || "", fecha: o.fechaAgendada ? dInput(o.fechaAgendada) : "",
-    estim: o.costoEstimado || "", entrega: o.fechaEntregaEstimada ? dInput(o.fechaEntregaEstimada) : "",
-    trabajo: o.trabajo || "", manoObra: o.manoObra || "", repuestos: (o.repuestos || []).map(r => ({ desc: r.desc, costo: r.costo }))
+    estim: soloNum(o.costoEstimado), entrega: o.fechaEntregaEstimada ? dInput(o.fechaEntregaEstimada) : "",
+    trabajo: o.trabajo || "", manoObra: soloNum(o.manoObra), otrosGastos: soloNum(o.otrosGastos),
+    repuestos: (o.repuestos || []).map(r => ({ desc: r.desc, costo: soloNum(r.costo) }))
   };
   const d = orderDraft;
   const e = EST[o.estado];
@@ -473,9 +477,9 @@ async function orderDetail(view, ctx) {
   const needTrabajo = d.estado === "completado" && !String(d.trabajo || "").trim();
   const reps = d.repuestos.map((r, i) =>
     '<div class="rep-row"><input class="input" data-rep="' + i + '" data-f="desc" placeholder="Repuesto / descripción" value="' + esc(r.desc || "") + '">' +
-    '<input class="input cost num" data-rep="' + i + '" data-f="costo" inputmode="numeric" placeholder="$" value="' + esc(r.costo || "") + '">' +
+    '<input class="input cost num" data-rep="' + i + '" data-f="costo" inputmode="numeric" placeholder="$" value="' + esc(miles(r.costo)) + '">' +
     '<button class="del" data-delrep="' + i + '">' + I.x + "</button></div>").join("");
-  const total = d.repuestos.reduce((s, r) => s + (Number(r.costo) || 0), 0) + (Number(d.manoObra) || 0);
+  const total = d.repuestos.reduce((s, r) => s + (Number(r.costo) || 0), 0) + (Number(d.manoObra) || 0) + (Number(d.otrosGastos) || 0);
   const showWork = d.estado === "completado" || d.estado === "en_taller";
   const esDesc = o.estado === "descartada";
   const descBanner = esDesc
@@ -508,14 +512,15 @@ async function orderDetail(view, ctx) {
     '<div class="card pad section"><label class="fld"><span class="lb">Estado</span><div class="chips">' + estChips + "</div></label>" +
     '<label class="fld"><span class="lb">Taller</span><input class="input" id="o-taller" placeholder="Nombre del taller" value="' + esc(d.taller) + '"' + (editable ? "" : " disabled") + "></label>" +
     '<label class="fld"><span class="lb">Fecha agendada</span><input class="input" type="date" id="o-fecha" value="' + esc(d.fecha) + '"' + (editable ? "" : " disabled") + "></label>" +
-    '<label class="fld"><span class="lb">Costo estimado de reparación</span><input class="input num" id="o-estim" inputmode="numeric" placeholder="$" value="' + esc(d.estim) + '"' + (editable ? "" : " disabled") + "></label>" +
+    '<label class="fld"><span class="lb">Costo estimado de reparación</span><input class="input num" id="o-estim" inputmode="numeric" placeholder="$" value="' + esc(miles(d.estim)) + '"' + (editable ? "" : " disabled") + "></label>" +
     '<label class="fld" style="margin-bottom:0"><span class="lb">Fecha estimada de entrega</span><input class="input" type="date" id="o-entrega" value="' + esc(d.entrega) + '"' + (editable ? "" : " disabled") + "></label></div>" +
     (showWork ? '<div class="card pad section"><span class="eyebrow" style="display:block;margin-bottom:12px">Trabajo realizado</span>' +
       '<label class="fld"><span class="lb">Descripción del trabajo</span><textarea class="input" id="o-trabajo" placeholder="Qué se hizo en el taller..."' + (editable ? "" : " disabled") + ">" + esc(d.trabajo) + "</textarea></label>" +
       '<span class="lb" style="display:block;font-family:Barlow Semi Condensed;font-weight:600;font-size:.82rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-2);margin-bottom:8px">Repuestos</span>' +
       '<div id="rep-list">' + reps + "</div>" +
       (editable ? '<button class="btn sm btn-soft" id="o-addrep" style="margin-bottom:14px">' + I.plus + "Agregar repuesto</button>" : "") +
-      '<label class="fld"><span class="lb">Monto neto de la reparación</span><input class="input num" id="o-mano" inputmode="numeric" placeholder="$" value="' + esc(d.manoObra) + '"' + (editable ? "" : " disabled") + "></label>" +
+      '<label class="fld"><span class="lb">Mano de obra</span><input class="input num" id="o-mano" inputmode="numeric" placeholder="$" value="' + esc(miles(d.manoObra)) + '"' + (editable ? "" : " disabled") + "></label>" +
+      '<label class="fld"><span class="lb">Otros gastos</span><input class="input num" id="o-otros" inputmode="numeric" placeholder="$" value="' + esc(miles(d.otrosGastos)) + '"' + (editable ? "" : " disabled") + "></label>" +
       '<div class="total-line"><span class="eyebrow">Costo total</span><b class="num">' + fmtCLP(total) + "</b></div></div>" : "") +
     completeCard +
     descBtn +
@@ -540,13 +545,19 @@ async function orderDetail(view, ctx) {
   };
   const cbtn = $("#o-complete", view);
   if (cbtn) cbtn.onclick = () => { syncOrder(view); d.estado = d.estado === "completado" ? "en_taller" : "completado"; orderDetail(view, ctx); };
+  // Recalcula el "Costo total" en vivo: repuestos + mano de obra + otros gastos.
+  const recalcTotal = () => { const el = $(".total-line b", view); if (el) el.textContent = fmtCLP(d.repuestos.reduce((s, r) => s + (Number(r.costo) || 0), 0) + (Number(d.manoObra) || 0) + (Number(d.otrosGastos) || 0)); };
   const bindF = (id, f) => { const el = $(id, view); if (el) el.oninput = () => { d[f] = el.value; if (f === "trabajo") updateSaveState(); }; };
-  bindF("#o-taller", "taller"); bindF("#o-trabajo", "trabajo"); bindF("#o-mano", "manoObra"); bindF("#o-estim", "estim");
+  // Campos de dinero: guardan solo dígitos y muestran separador de miles en vivo.
+  const bindMoney = (id, f) => { const el = $(id, view); if (el) el.oninput = () => { d[f] = soloNum(el.value); el.value = miles(d[f]); recalcTotal(); }; };
+  bindF("#o-taller", "taller"); bindF("#o-trabajo", "trabajo");
+  bindMoney("#o-mano", "manoObra"); bindMoney("#o-otros", "otrosGastos"); bindMoney("#o-estim", "estim");
   const fecha = $("#o-fecha", view); if (fecha) fecha.onchange = () => { d.fecha = fecha.value; };
   const entrega = $("#o-entrega", view); if (entrega) entrega.onchange = () => { d.entrega = entrega.value; };
   $$("[data-rep]", view).forEach(inp => inp.oninput = () => {
     const i = +inp.getAttribute("data-rep"), f = inp.getAttribute("data-f");
-    d.repuestos[i][f] = inp.value; if (f === "costo") { const el = $(".total-line b", view); if (el) el.textContent = fmtCLP(d.repuestos.reduce((s, r) => s + (Number(r.costo) || 0), 0) + (Number(d.manoObra) || 0)); }
+    if (f === "costo") { d.repuestos[i].costo = soloNum(inp.value); inp.value = miles(d.repuestos[i].costo); recalcTotal(); }
+    else d.repuestos[i][f] = inp.value;
   });
   $$("[data-delrep]", view).forEach(b => b.onclick = () => { syncOrder(view); d.repuestos.splice(+b.getAttribute("data-delrep"), 1); orderDetail(view, ctx); });
   const ar = $("#o-addrep", view); if (ar) ar.onclick = () => { syncOrder(view); d.repuestos.push({ desc: "", costo: "" }); orderDetail(view, ctx); };
@@ -560,6 +571,7 @@ async function orderDetail(view, ctx) {
       costoEstimado: Math.round(Number(d.estim) || 0),
       fechaEntregaEstimada: d.entrega ? new Date(d.entrega + "T12:00:00").getTime() : null,
       trabajo: String(d.trabajo).trim(), repuestos: reps, manoObra: Math.round(Number(d.manoObra) || 0),
+      otrosGastos: Math.round(Number(d.otrosGastos) || 0),
       completedAt: d.estado === "completado" ? (o.completedAt || Date.now()) : null,
       descartada: null
     };
@@ -578,6 +590,7 @@ async function printOrden(o, t) {
     ? rep.map(r => '<tr><td>' + esc(r.desc || "") + '</td><td class="r">' + fmtCLP(Number(r.costo) || 0) + "</td></tr>").join("")
     : '<tr><td colspan="2" style="color:#777">Sin repuestos registrados</td></tr>';
   const mano = Number(o.manoObra) || 0;
+  const otros = Number(o.otrosGastos) || 0;
   const total = orderTotal(o);
   const est = EST[o.estado] || { l: "" };
   const coLine = [co.giro, co.rut ? "RUT " + co.rut : ""].filter(Boolean).join(" · ");
@@ -610,7 +623,8 @@ async function printOrden(o, t) {
     (o.trabajo ? '<div class="po-sec"><h2>Trabajo realizado</h2><p>' + esc(o.trabajo) + "</p></div>" : "") +
     '<div class="po-sec"><h2>Repuestos y costos</h2><table class="po-table"><thead><tr><th>Descripción</th><th class="r">Costo</th></tr></thead><tbody>' +
       repRows +
-      '<tr><td class="r">Monto neto de la reparación</td><td class="r">' + fmtCLP(mano) + "</td></tr>" +
+      '<tr><td class="r">Mano de obra</td><td class="r">' + fmtCLP(mano) + "</td></tr>" +
+      (otros ? '<tr><td class="r">Otros gastos</td><td class="r">' + fmtCLP(otros) + "</td></tr>" : "") +
       '<tr class="po-tot"><td class="r">TOTAL</td><td class="r">' + fmtCLP(total) + "</td></tr>" +
       "</tbody></table></div>" +
     '<div class="po-sign"><div>_____________________<br>Responsable de taller</div><div>_____________________<br>Recibí conforme</div></div>' +
@@ -656,9 +670,10 @@ function syncOrder(view) {
   const g = id => { const e = $(id, view); return e ? e.value : undefined; };
   const tl = g("#o-taller"); if (tl !== undefined) d.taller = tl;
   const tr = g("#o-trabajo"); if (tr !== undefined) d.trabajo = tr;
-  const mo = g("#o-mano"); if (mo !== undefined) d.manoObra = mo;
-  const es = g("#o-estim"); if (es !== undefined) d.estim = es;
+  const mo = g("#o-mano"); if (mo !== undefined) d.manoObra = soloNum(mo);
+  const ot = g("#o-otros"); if (ot !== undefined) d.otrosGastos = soloNum(ot);
+  const es = g("#o-estim"); if (es !== undefined) d.estim = soloNum(es);
   const fc = g("#o-fecha"); if (fc !== undefined) d.fecha = fc;
   const en = g("#o-entrega"); if (en !== undefined) d.entrega = en;
-  $$("[data-rep]", view).forEach(inp => { const i = +inp.getAttribute("data-rep"), f = inp.getAttribute("data-f"); if (d.repuestos[i]) d.repuestos[i][f] = inp.value; });
+  $$("[data-rep]", view).forEach(inp => { const i = +inp.getAttribute("data-rep"), f = inp.getAttribute("data-f"); if (d.repuestos[i]) d.repuestos[i][f] = f === "costo" ? soloNum(inp.value) : inp.value; });
 }

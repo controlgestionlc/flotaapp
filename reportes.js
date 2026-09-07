@@ -235,7 +235,7 @@ function exportTrips(trips, trucks) {
 // Reporte consolidado del período, imprimible / guardable como PDF.
 function generarReporte(ctx, range, fuelR, tripsR, orders, trucks, stats) {
   const co = ctx.company ? ctx.company() : { nombre: "", app: "Bitácora de Camiones" };
-  const oTotal = o => (o.repuestos || []).reduce((s, x) => s + (Number(x.costo) || 0), 0) + (Number(o.manoObra) || 0);
+  const oTotal = o => (o.repuestos || []).reduce((s, x) => s + (Number(x.costo) || 0), 0) + (Number(o.manoObra) || 0) + (Number(o.otrosGastos) || 0);
   const dLo = new Date(range.desde + "T00:00:00").getTime(), dHi = new Date(range.hasta + "T23:59:59").getTime();
   const litros = fuelR.reduce((s, f) => s + (Number(f.litros) || 0), 0);
   const gasto = fuelR.reduce((s, f) => s + (Number(f.total) || 0), 0);

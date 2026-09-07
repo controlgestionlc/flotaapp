@@ -3,7 +3,7 @@ import { DOC_TYPES } from "./checklist.js";
 import { I, esc, fmtCLP, fmtDate, fmtDateTime, docStatus, iconSpan, emptyBox, $, $$ } from "./ui.js";
 
 const EST = { pendiente: "Pendiente", agendado: "Agendado", en_taller: "En taller", completado: "Completado", descartada: "Descartada" };
-function orderTotal(o) { return (o.repuestos || []).reduce((s, x) => s + (Number(x.costo) || 0), 0) + (Number(o.manoObra) || 0); }
+function orderTotal(o) { return (o.repuestos || []).reduce((s, x) => s + (Number(x.costo) || 0), 0) + (Number(o.manoObra) || 0) + (Number(o.otrosGastos) || 0); }
 function nf(n, dec) { return (Number(n) || 0).toLocaleString("es-CL", { maximumFractionDigits: dec || 0 }); }
 
 function truckRend(id, fuel) {

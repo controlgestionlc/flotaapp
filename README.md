@@ -4,7 +4,7 @@ App web móvil (PWA) para gestionar la mantención preventiva y correctiva, y la
 
 Construida con **HTML + JavaScript modular (ES modules) + Firebase** (Authentication + Firestore), sin paso de build. Se abre directamente en el navegador, es instalable como app (PWA) y se despliega en Firebase Hosting o GitHub Pages.
 
-**Versión actual: 1.3.3**
+**Versión actual: 1.3.5**
 
 ## Novedades recientes (resumen)
 
@@ -14,7 +14,7 @@ Construida con **HTML + JavaScript modular (ES modules) + Firebase** (Authentica
 - **Clima por faena (Open-Meteo, sin API key):** pronóstico de 7 días con lluvia y temperatura máx/mín como señal de riesgo (el encargado confirma, nunca cierra faenas solo). **Historial de clima** por faena y por día desde el 1 de agosto de 2026, con actualización automática diaria e impresión.
 - **Recepción en planta (perfil Secretaria):** reserva de horario de recepción, planta de destino y guía de despacho por cada viaje (vuelta). Aparece un check en la planificación diaria y semanal cuando el día queda completo. Si el chofer ingresa una guía distinta a la reservada, se marca en rojo.
 - **Asignación de chofer por camión:** el conductor solo puede seleccionar su camión asignado (ve el estado de los demás) y puede tomar uno de reserva si el suyo está en taller.
-- **Órdenes de taller:** creación con todos los datos, gestión y cierre (trabajo realizado, mano de obra, repuestos y costo total), impresión con **logo y datos de la empresa**. Una falla reportada se puede convertir en orden tocándola; la novedad desaparece solo si la orden se guarda.
+- **Órdenes de taller:** creación con todos los datos, gestión y cierre (trabajo realizado, repuestos, mano de obra, otros gastos y costo total sumado en vivo), con todos los montos como enteros con separador de miles. Impresión con **logo y datos de la empresa**. Una falla reportada se puede convertir en orden tocándola; la novedad desaparece solo si la orden se guarda.
 - **Permisos por usuario:** además del rol, cada usuario puede tener permisos personalizados desde la pantalla Usuarios.
 
 ## Modo demostración (sin Firebase)
@@ -86,7 +86,7 @@ Cada checklist y cada registro de bitácora quedan sellados con el `uid` del usu
 - `bitacora/{id}` — `truckId`, `uid`, `deviceId`, `driverNombre`, `ts`, `tipo`, `sev`, `desc`, `gps`.
 - `fuel/{id}` — cargas de combustible: `truckId`, `km`, `litros`, `precioLitro`, `total`, `fecha`.
 - `trips/{id}` — viajes: origen/predio, `plantaDestino`, `producto`, `volumen`, `unidad`, `guiaDespacho`, `salida`, `llegada`, `estado`, GPS.
-- `orders/{id}` — `truckId`, `otNumero`, `titulo`, `detalle`, `estado`, `taller`, `fechaAgendada`, `costoEstimado`, `fechaEntregaEstimada`, `trabajo`, `repuestos[]`, `manoObra`, `completedAt`, `sources[]`.
+- `orders/{id}` — `truckId`, `otNumero`, `titulo`, `detalle`, `estado`, `taller`, `fechaAgendada`, `costoEstimado`, `fechaEntregaEstimada`, `trabajo`, `repuestos[]`, `manoObra`, `otrosGastos`, `completedAt`, `sources[]`.
 - `resolved/{fallaId}` — fallas descartadas por el supervisor/admin.
 - `faenas/{id}` — catálogo de faenas: ubicación, comuna, coordenadas, unidad, metros semana/día, días de operación, capacidad, `clima?` (pronóstico) y `climaHist?` (historial diario).
 - `plans/{id}` — plan semanal: `asignaciones[]` (camión, faena, conductor, horario, viajes/volumen objetivo, `plantaDestino?`, `reservas[]` de recepción), `original`, `cambios[]`, estado.
