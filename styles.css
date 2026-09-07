@@ -231,7 +231,9 @@ textarea.input{min-height:84px;resize:vertical}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .chips{display:flex;gap:8px;flex-wrap:wrap}
 .chip{appearance:none;cursor:pointer;border:1px solid var(--line-strong);background:var(--surface-2);color:var(--ink-2);
-  font-family:"Barlow Semi Condensed";font-weight:600;font-size:.88rem;padding:8px 13px;border-radius:999px}
+  font-family:"Barlow Semi Condensed";font-weight:600;font-size:.88rem;padding:8px 13px;border-radius:999px;
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;line-height:1}
+.chip svg{width:18px;height:18px;flex:none}
 .chip.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .chip.on.sev-alta{background:var(--crit);border-color:var(--crit);color:#fff}
 .chip.on.sev-media{background:var(--warn);border-color:var(--warn);color:#fff}

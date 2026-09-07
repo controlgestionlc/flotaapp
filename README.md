@@ -4,7 +4,7 @@ App web móvil (PWA) para gestionar la mantención preventiva y correctiva, y la
 
 Construida con **HTML + JavaScript modular (ES modules) + Firebase** (Authentication + Firestore), sin paso de build. Se abre directamente en el navegador, es instalable como app (PWA) y se despliega en Firebase Hosting o GitHub Pages.
 
-**Versión actual: 1.3.5**
+**Versión actual: 1.3.6**
 
 ## Novedades recientes (resumen)
 
