@@ -269,10 +269,10 @@ async function availSheet(ctx, truckId, trucks, orders, fallas) {
     body += '<button class="btn sm btn-soft" style="margin-bottom:14px" id="av-week">' + I.route + "Ver semana completa</button>";
   } catch (e) { /* la planificación es complementaria */ }
 
+  // Novedades pendientes del camión que aún no tienen orden de taller.
+  const fs = fallas.filter(f => f.truckId === truckId);
   if (a.k === "operativo") {
     body += '<p class="meta-line" style="margin-bottom:10px">Operativo, sin novedades pendientes. Disponible para operar.</p>';
-    if (can(ctx.profile, "order.manage"))
-      body += '<button class="btn btn-soft" id="av-gen">' + I.wrench + "Generar orden de taller</button>";
   } else if (a.order) {
     const o = a.order, estim = Number(o.costoEstimado) || 0;
     body += '<div class="card pad" style="box-shadow:none;border-color:var(--line)">' +
@@ -284,18 +284,23 @@ async function availSheet(ctx, truckId, trucks, orders, fallas) {
       (estim ? row2("Reparación estimada", fmtCLP(estim)) : "") +
       (o.fechaEntregaEstimada ? row2("Entrega estimada", fmtDate(o.fechaEntregaEstimada)) : "") +
       "</div>";
-    if (can(ctx.profile, "order.manage"))
-      body += '<button class="btn btn-primary" style="margin-top:14px" id="av-order">' + I.wrench + "Ver o editar la orden</button>";
   } else {
-    const fs = fallas.filter(f => f.truckId === truckId);
-    body += '<p class="meta-line" style="margin-bottom:10px">Novedades reportadas, sin orden de taller todavía:</p>' +
-      '<div class="card" style="box-shadow:none">' + fs.map(f =>
-        '<div class="row"><span class="sev-stripe sev-' + f.sev + '"></span><div class="rl"><div class="t">' + esc(f.titulo) +
-        '</div><div class="m"><span>' + esc(f.origen) + "</span><span>" + fmtDate(f.ts) + "</span></div></div></div>").join("") + "</div>";
-    if (can(ctx.profile, "order.manage") && fs[0])
-      body += '<button class="btn btn-primary" style="margin-top:14px" id="av-crear">' + I.wrench + "Crear orden de taller</button>";
+    body += '<p class="meta-line" style="margin-bottom:8px">Novedades reportadas, sin orden de taller todavía:</p>';
+  }
+  // Lista de novedades pendientes (siempre que existan, incluso con una orden abierta).
+  if (fs.length) {
+    if (a.order) body += '<div class="meta-line" style="margin:12px 0 6px;font-size:.82rem">Otras novedades reportadas (sin orden):</div>';
+    body += '<div class="card" style="box-shadow:none">' + fs.map(f =>
+      '<div class="row"><span class="sev-stripe sev-' + f.sev + '"></span><div class="rl"><div class="t">' + esc(f.titulo) +
+      '</div><div class="m"><span>' + esc(f.origen) + "</span><span>" + fmtDate(f.ts) + "</span></div></div></div>").join("") + "</div>";
   }
 
+  if (can(ctx.profile, "order.manage") && a.order)
+    body += '<button class="btn btn-primary" style="margin-top:14px" id="av-order">' + I.wrench + "Ver o editar la orden</button>";
+  if (can(ctx.profile, "order.manage") && fs.length)
+    body += '<button class="btn ' + (a.order ? "btn-soft" : "btn-primary") + '" style="margin-top:10px" id="av-crear">' + I.wrench + "Crear orden desde la novedad</button>";
+  if (can(ctx.profile, "order.manage"))
+    body += '<button class="btn btn-soft" style="margin-top:10px" id="av-gen">' + I.wrench + (a.order ? "Generar otra orden de taller" : "Generar orden de taller") + "</button>";
   if (can(ctx.profile, "truck.manage"))
     body += '<button class="btn btn-soft" style="margin-top:10px" id="av-assign">' + I.users + "Asignar chofer" + (t.conductorNombre ? " · " + esc(t.conductorNombre) : "") + "</button>";
   if (can(ctx.profile, "order.manage"))
