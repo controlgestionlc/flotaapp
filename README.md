@@ -4,7 +4,7 @@ App web móvil (PWA) para gestionar la mantención preventiva y correctiva, y la
 
 Construida con **HTML + JavaScript modular (ES modules) + Firebase** (Authentication + Firestore), sin paso de build. Se abre directamente en el navegador, es instalable como app (PWA) y se despliega en Firebase Hosting o GitHub Pages.
 
-**Versión actual: 1.3.7**
+**Versión actual: 1.3.8**
 
 ## Novedades recientes (resumen)
 
@@ -14,6 +14,8 @@ Construida con **HTML + JavaScript modular (ES modules) + Firebase** (Authentica
 - **Clima por faena (Open-Meteo, sin API key):** pronóstico de 7 días con lluvia y temperatura máx/mín como señal de riesgo (el encargado confirma, nunca cierra faenas solo). **Historial de clima** por faena y por día desde el 1 de agosto de 2026, con actualización automática diaria e impresión.
 - **Recepción en planta (perfil Secretaria):** reserva de horario de recepción, planta de destino y guía de despacho por cada viaje (vuelta). Aparece un check en la planificación diaria y semanal cuando el día queda completo. Si el chofer ingresa una guía distinta a la reservada, se marca en rojo.
 - **Asignación de chofer por camión:** el conductor solo puede seleccionar su camión asignado (ve el estado de los demás) y puede tomar uno de reserva si el suyo está en taller.
+- **Documento vencido = fuera de servicio automático:** si un camión tiene cualquier documento vencido (permiso de circulación, SOAP, revisión técnica u otros), queda automáticamente fuera de servicio: aparece en rojo en el panel, no es seleccionable por el conductor y no entra en la asignación de la planificación hasta regularizar el documento.
+- **Gestionar novedad:** al tocar una falla reportada en Disponibilidad se elige entre crear la orden de taller o descartarla indicando el motivo.
 - **Órdenes de taller:** creación con todos los datos, gestión y cierre (trabajo realizado, repuestos, mano de obra, otros gastos y costo total sumado en vivo), con todos los montos como enteros con separador de miles. Impresión con **logo y datos de la empresa**. Una falla reportada se puede convertir en orden tocándola; la novedad desaparece solo si la orden se guarda.
 - **Permisos por usuario:** además del rol, cada usuario puede tener permisos personalizados desde la pantalla Usuarios.
 

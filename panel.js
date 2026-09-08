@@ -6,7 +6,7 @@ import { weekInfo, dayKey } from "./planning.js";
 import { openTruckWeek } from "./truckweek.js";
 import { autoSyncClimaHistBg } from "./planificacion.js";
 import {
-  I, esc, fmtCLP, fmtDate, fmtDateTime, monthKey, dInput, docStatus,
+  I, esc, fmtCLP, fmtDate, fmtDateTime, monthKey, dInput, docStatus, docVencidoNombre,
   iconSpan, emptyBox, toast, openSheet, openDrawer, closeSheet, $, $$
 } from "./ui.js";
 
@@ -59,12 +59,17 @@ const miles = v => { const s = soloNum(v); return s ? Number(s).toLocaleString("
 
 // Semáforo de disponibilidad operativa del camión.
 // verde = operativo · amarillo = observación · rojo = fuera de servicio
-function availStatus(truckId, orders, fallas) {
+function availStatus(truck, orders, fallas) {
+  const truckId = typeof truck === "object" ? truck.id : truck;
+  const t = typeof truck === "object" ? truck : null;
   const open = orders.filter(o => o.truckId === truckId && activa(o));
   const fs = fallas.filter(f => f.truckId === truckId);
   const enTaller = open.find(o => o.estado === "en_taller");
   if (enTaller) return { k: "fuera", cls: "crit", label: "Fuera de servicio", order: enTaller };
   if (fs.some(f => f.sev === "alta")) return { k: "fuera", cls: "crit", label: "Fuera de servicio", order: open[0] || null };
+  // Un documento vencido deja el camión automáticamente fuera de servicio.
+  const docV = t ? docVencidoNombre(t) : null;
+  if (docV) return { k: "fuera", cls: "crit", label: "Fuera de servicio", docVencido: docV, order: null };
   const prog = open.find(o => o.estado === "agendado" || o.estado === "pendiente");
   if (prog || fs.length) return { k: "observacion", cls: "warn", label: "Observación", order: prog || null };
   return { k: "operativo", cls: "ok", label: "Operativo", order: null };
@@ -102,7 +107,7 @@ async function dashboard(view, ctx) {
   const resolved = resolvedDocs.map(r => r.id);
   const fallas = openFallas(cks, bits, orders, resolved);
   const manage = can(p, "order.manage");
-  const avail = trucks.map(t => ({ t, a: availStatus(t.id, orders, fallas) }));
+  const avail = trucks.map(t => ({ t, a: availStatus(t, orders, fallas) }));
   const nOp = avail.filter(x => x.a.k === "operativo").length;
   const nObs = avail.filter(x => x.a.k === "observacion").length;
   const nFuera = avail.filter(x => x.a.k === "fuera").length;
@@ -245,11 +250,14 @@ function orderRow(o, trucks) {
 // Ficha de disponibilidad al tocar un camión en el semáforo.
 async function availSheet(ctx, truckId, trucks, orders, fallas) {
   const t = trucks.find(x => x.id === truckId); if (!t) return;
-  const a = availStatus(truckId, orders, fallas);
+  const a = availStatus(t, orders, fallas);
   let body = '<div class="stat-truck" style="margin-bottom:16px"><span class="trucknum">' + esc(t.num) + "</span>" +
     '<div style="flex:1"><div style="font-weight:700;font-family:Barlow Semi Condensed;font-size:1.15rem">' + esc(t.marca + " " + (t.modelo || "")) + "</div>" +
     '<div style="margin-top:4px"><span class="plate">' + esc(t.patente) + "</span></div></div>" +
     '<span class="pill ' + a.cls + '"><span class="dot"></span>' + a.label + "</span></div>";
+  if (a.docVencido)
+    body += '<div class="card pad" style="box-shadow:none;border-color:var(--crit);margin-bottom:10px"><span class="eyebrow" style="display:block;margin-bottom:4px;color:var(--crit)">Fuera de servicio por documentación</span>' +
+      '<p style="margin:0;font-size:.88rem;color:var(--ink-2)">' + esc(a.docVencido) + ' vencido. El camión queda fuera de servicio hasta regularizar el documento.</p></div>';
 
   // Planificación de hoy para este camión.
   try {

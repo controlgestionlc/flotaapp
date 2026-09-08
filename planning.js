@@ -97,17 +97,8 @@ export function truckAvailability(t, data, dayTs) {
   const agendado = openO.find(o => o.estado === "agendado" || o.estado === "pendiente");
   const fallaAlta = fs.some(f => f.sev === "alta");
 
-  // Estado principal (mismo criterio que el semáforo del panel).
-  let k;
-  if (t.activo === false) { items.push({ st: "bad", label: "Camión fuera de servicio" }); k = "fuera"; }
-  else if (enTaller) { items.push({ st: "bad", label: "En taller" + (enTaller.otNumero ? " (" + enTaller.otNumero + ")" : "") }); k = "fuera"; }
-  else if (fallaAlta) { items.push({ st: "bad", label: "Falla de severidad alta reportada" }); k = "fuera"; }
-  else if (agendado || fs.length) { items.push({ st: "warn", label: agendado ? "Mantención programada" : (fs.length + " falla(s) reportada(s)") }); k = "observacion"; }
-  else items.push({ st: "ok", label: "Camión operativo" });
-  if (!k) k = "operativo";
-  const ok = (k === "operativo");
-
-  // Documentación
+  // Documentación (se calcula antes porque un documento vencido deja el
+  // camión automáticamente fuera de servicio).
   let docVencido = null, docPorVencer = null;
   (DOC_TYPES || []).forEach(dt => {
     const vence = t.docs && t.docs[dt.k] && t.docs[dt.k].vence;
@@ -119,11 +110,23 @@ export function truckAvailability(t, data, dayTs) {
     const s = docStatus(o.vence);
     if (s.k === "vencido") docVencido = docVencido || (o.nombre || "Documento");
   });
-  // La documentación vencida es una ADVERTENCIA (no bloquea la disponibilidad):
-  // el camión sigue asignable y el encargado decide, igual que en el panel.
-  if (docVencido) items.push({ st: "warn", label: "Documentación vencida: " + docVencido });
-  else if (docPorVencer) items.push({ st: "warn", label: "Documento por vencer: " + docPorVencer });
-  else items.push({ st: "ok", label: "Documentación vigente" });
+
+  // Estado principal (mismo criterio que el semáforo del panel).
+  let k;
+  if (t.activo === false) { items.push({ st: "bad", label: "Camión fuera de servicio" }); k = "fuera"; }
+  else if (enTaller) { items.push({ st: "bad", label: "En taller" + (enTaller.otNumero ? " (" + enTaller.otNumero + ")" : "") }); k = "fuera"; }
+  else if (fallaAlta) { items.push({ st: "bad", label: "Falla de severidad alta reportada" }); k = "fuera"; }
+  else if (docVencido) { items.push({ st: "bad", label: "Documentación vencida: " + docVencido }); k = "fuera"; }
+  else if (agendado || fs.length) { items.push({ st: "warn", label: agendado ? "Mantención programada" : (fs.length + " falla(s) reportada(s)") }); k = "observacion"; }
+  else items.push({ st: "ok", label: "Camión operativo" });
+  if (!k) k = "operativo";
+  const ok = (k === "operativo");
+
+  // Documentación (detalle). Un documento vencido ya bloqueó arriba; aquí solo
+  // se agregan los avisos que no se hayan mostrado como estado principal.
+  if (docVencido && k !== "fuera") items.push({ st: "warn", label: "Documentación vencida: " + docVencido });
+  else if (!docVencido && docPorVencer) items.push({ st: "warn", label: "Documento por vencer: " + docPorVencer });
+  else if (!docVencido) items.push({ st: "ok", label: "Documentación vigente" });
 
   // Mantención preventiva (aviso, no bloquea)
   const km = truckKm(fuel, t.id);

@@ -1,6 +1,6 @@
 import { store } from "./store.js";
 import { DOC_TYPES } from "./checklist.js";
-import { I, esc, fmtCLP, fmtDate, fmtDateTime, docStatus, iconSpan, emptyBox, $, $$ } from "./ui.js";
+import { I, esc, fmtCLP, fmtDate, fmtDateTime, docStatus, docVencidoNombre, iconSpan, emptyBox, $, $$ } from "./ui.js";
 
 const EST = { pendiente: "Pendiente", agendado: "Agendado", en_taller: "En taller", completado: "Completado", descartada: "Descartada" };
 function orderTotal(o) { return (o.repuestos || []).reduce((s, x) => s + (Number(x.costo) || 0), 0) + (Number(o.manoObra) || 0) + (Number(o.otrosGastos) || 0); }
@@ -50,8 +50,10 @@ export async function renderResumen(view, ctx) {
   const lastCk = cks.filter(c => c.truckId === id).sort((a, b) => b.ts - a.ts)[0];
   const fallas = openFallasTruck(id, cks, bits, orders, resolved);
   const enTaller = openOrders.find(o => o.estado === "en_taller");
+  const docVenc = docVencidoNombre(t);
   const estado = enTaller ? { cls: "crit", label: "En taller" }
     : fallas.some(f => f.sev === "alta") ? { cls: "crit", label: "Con falla" }
+    : docVenc ? { cls: "crit", label: "Fuera de servicio" }
     : (fallas.length || openOrders.length) ? { cls: "warn", label: "Con novedad" }
     : { cls: "ok", label: "Operativo" };
 

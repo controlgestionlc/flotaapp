@@ -55,6 +55,17 @@ export function docStatus(vence) {
   return { k: "vigente", label: "Vigente", cls: "ok", days };
 }
 
+// ¿El camión tiene algún documento vencido? Un documento vencido deja el
+// camión automáticamente fuera de servicio. Devuelve el nombre del primero
+// vencido (o null). Revisa los documentos fijos y los "otros".
+export function docVencidoNombre(truck) {
+  const d = truck && truck.docs; if (!d) return null;
+  const fijos = [["permisoCirculacion", "Permiso de circulación"], ["soap", "SOAP"], ["revisionTecnica", "Revisión técnica"]];
+  for (const [k, n] of fijos) { if (d[k] && docStatus(d[k].vence).k === "vencido") return n; }
+  for (const o of (d.otros || [])) { if (docStatus(o.vence).k === "vencido") return o.nombre || "Documento"; }
+  return null;
+}
+
 // ---- iconos (inline SVG) ----
 export const I = {
   truck:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h11v10H2z"/><path d="M13 9h4l3 3v4h-7z"/><circle cx="6.5" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></svg>',
