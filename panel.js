@@ -295,7 +295,7 @@ async function availSheet(ctx, truckId, trucks, orders, fallas) {
     if (a.order) body += '<div class="meta-line" style="margin:12px 0 6px;font-size:.82rem">Otras novedades reportadas (sin orden):</div>';
     body += '<div class="card" style="box-shadow:none">' + fs.map(f =>
       '<div class="row" data-falla="' + esc(f.id) + '" style="cursor:pointer"><span class="sev-stripe sev-' + f.sev + '"></span><div class="rl"><div class="t">' + esc(f.titulo) +
-      '</div><div class="m"><span>' + esc(f.origen) + "</span><span>" + fmtDate(f.ts) + "</span><span>Toca para crear orden</span></div></div><span class='arrow'>" + I.arrow + "</span></div>").join("") + "</div>";
+      '</div><div class="m"><span>' + esc(f.origen) + "</span><span>" + fmtDate(f.ts) + "</span><span>Toca para gestionar</span></div></div><span class='arrow'>" + I.arrow + "</span></div>").join("") + "</div>";
   }
 
   if (can(ctx.profile, "order.manage") && a.order)
@@ -310,7 +310,7 @@ async function availSheet(ctx, truckId, trucks, orders, fallas) {
 
   openSheet("Disponibilidad · " + t.num, body, () => {
     const bo = $("#av-order"); if (bo) bo.onclick = () => { closeSheet(); orderDraft = null; ctx.go("order", { id: a.order.id }); };
-    $$("[data-falla]").forEach(b => b.onclick = () => { const id = b.getAttribute("data-falla"); closeSheet(); createOrder(ctx, id, fallas); });
+    $$("[data-falla]").forEach(b => b.onclick = () => { const id = b.getAttribute("data-falla"); closeSheet(); chooseFallaAction(ctx, id, fallas); });
     const bg = $("#av-gen"); if (bg) bg.onclick = () => { closeSheet(); createOrder(ctx, null, fallas, truckId); };
     const ba = $("#av-assign"); if (ba) ba.onclick = () => { closeSheet(); asignarChofer(ctx, t); };
     const bfa = $("#av-falla"); if (bfa) bfa.onclick = () => { closeSheet(); reportarFallaAdmin(ctx, truckId, t.num); };
@@ -451,6 +451,21 @@ function resolveFalla(ctx, fid, fallas) {
           closeSheet(); toast("Falla descartada", "ok"); ctx.go("home", {});
         } catch (e) { toast("No se pudo descartar: " + (e.message || e), "err"); btn.disabled = false; btn.textContent = "Descartar falla"; }
       };
+    });
+}
+
+// Al tocar una novedad reportada: elegir entre crear una orden de taller
+// o descartarla (con motivo). Ambas acciones ya existen por separado.
+function chooseFallaAction(ctx, fid, fallas) {
+  const f = (fallas || []).find(x => x.id === fid);
+  openSheet("Gestionar novedad",
+    '<p style="margin:0 0 4px;font-weight:600">' + (f ? esc(f.titulo) : "") + "</p>" +
+    (f ? '<p class="meta-line" style="margin:0 0 14px;font-size:.82rem">' + esc(f.origen || "") + " · " + fmtDate(f.ts) + (f.driver ? " · " + esc(f.driver) : "") + "</p>" : "") +
+    '<button class="btn btn-primary" id="fa-order" style="width:100%">' + I.wrench + "Crear orden de taller</button>" +
+    '<button class="btn btn-soft" id="fa-desc" style="width:100%;margin-top:10px;color:var(--crit)">' + I.x + "Descartar falla</button>",
+    () => {
+      $("#fa-order").onclick = () => { closeSheet(); createOrder(ctx, fid, fallas); };
+      $("#fa-desc").onclick = () => { closeSheet(); resolveFalla(ctx, fid, fallas); };
     });
 }
 
