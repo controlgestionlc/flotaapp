@@ -53,8 +53,10 @@ function truckStatus(id, orders, fallas) {
   return { cls: "ok", label: "Operativo" };
 }
 // Bitácora de compras/fletes/servicios de la orden (movimientos).
-const MOV_TIPOS = [["repuesto", "Repuesto"], ["flete", "Flete"], ["servicio", "Servicio"], ["otro", "Otro"]];
-const movLabel = k => (MOV_TIPOS.find(x => x[0] === k) || [, "Otro"])[1];
+const MOV_TIPOS = [["repuesto", "Repuesto"], ["manoobra", "Mano de obra"], ["servicio", "Servicio"], ["otro", "Otro"]];
+// Incluye "flete" para seguir mostrando registros antiguos de ese tipo.
+const MOV_LABELS = { repuesto: "Repuesto", manoobra: "Mano de obra", servicio: "Servicio", flete: "Flete", otro: "Otro" };
+const movLabel = k => MOV_LABELS[k] || "Otro";
 function movTotal(o) { return (o.movimientos || []).reduce((s, m) => s + (Number(m.total) || 0), 0); }
 // Total acumulado de la orden: compras/servicios + repuestos (legado) + mano de obra + otros gastos.
 function orderTotal(o) { return movTotal(o) + (o.repuestos || []).reduce((s, x) => s + (Number(x.costo) || 0), 0) + (Number(o.manoObra) || 0) + (Number(o.otrosGastos) || 0); }
