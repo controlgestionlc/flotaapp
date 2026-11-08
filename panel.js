@@ -538,7 +538,7 @@ async function orderDetail(view, ctx) {
   const resumenCard = '<div class="card pad section"><div class="total-line" style="margin:0;border:0;padding:0"><span class="eyebrow">Total acumulado de la orden</span><b class="num" id="o-acc" style="font-size:1.3rem">' + fmtCLP(accTotal) + "</b></div>" +
     '<div class="meta-line" id="o-acc-break" style="margin-top:6px;font-size:.8rem">Compras/servicios ' + fmtCLP(accCompras) + " · Mano de obra " + fmtCLP(accMano) + " · Otros " + fmtCLP(accOtros) + "</div></div>";
   // Tarjeta bitácora de compras/fletes/servicios (siempre visible como historial).
-  const comprasCard = '<div class="card pad section"><span class="eyebrow" style="display:block;margin-bottom:10px">Compras, fletes y servicios</span>' +
+  const comprasCard = '<div class="card pad section"><span class="eyebrow" style="display:block;margin-bottom:10px">Compras, mano de obra y servicios</span>' +
     '<div id="mov-list">' + movListHtml + "</div>" +
     '<div class="total-line"><span class="eyebrow">Acumulado compras/servicios</span><b class="num">' + fmtCLP(accCompras) + "</b></div>" +
     (canEdit ? '<button class="btn sm btn-soft" id="o-addmov" style="margin-top:12px">' + I.plus + "Agregar compra / servicio</button>" : "") + "</div>";
@@ -780,7 +780,7 @@ async function printOrden(o, t) {
     "</div>" +
     '<div class="po-sec"><h2>Problema / motivo</h2><p>' + esc(o.titulo || "") + (o.detalle ? "<br>" + esc(o.detalle) : "") + "</p></div>" +
     (o.trabajo ? '<div class="po-sec"><h2>Trabajo realizado</h2><p>' + esc(o.trabajo) + "</p></div>" : "") +
-    '<div class="po-sec"><h2>Compras, fletes y servicios</h2><table class="po-table"><thead><tr><th>Descripción</th><th class="r">Cant. × P. unit.</th><th class="r">Total</th></tr></thead><tbody>' +
+    '<div class="po-sec"><h2>Compras, mano de obra y servicios</h2><table class="po-table"><thead><tr><th>Descripción</th><th class="r">Cant. × P. unit.</th><th class="r">Total</th></tr></thead><tbody>' +
       itemRows +
       '<tr><td class="r" colspan="2">Mano de obra</td><td class="r">' + fmtCLP(mano) + "</td></tr>" +
       (otros ? '<tr><td class="r" colspan="2">Otros gastos</td><td class="r">' + fmtCLP(otros) + "</td></tr>" : "") +
