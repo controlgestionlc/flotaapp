@@ -69,7 +69,7 @@ function menuItems(p) {
   if (can(p, "data.import")) items.push({ r: "importar", l: "Importar", ic: I.upload });
   return items;
 }
-const HOME_ROUTES = { home: 1, camiones: 1, truckForm: 1, truckDetail: 1, mantencion: 1, resumen: 1 };
+const HOME_ROUTES = { home: 1, camiones: 1, truckForm: 1, truckDetail: 1, carroForm: 1, carroDetail: 1, mantencion: 1, resumen: 1 };
 function openMenu() {
   const p = ctx.profile; if (!p) return;
   const cur = ctx.route;
@@ -119,7 +119,7 @@ async function renderShell() {
 async function routeTo(view) {
   const p = ctx.profile, r = ctx.route;
   if (p.role === "conductor") return renderConductor(view, ctx);
-  if (r === "camiones" || r === "truckForm" || r === "truckDetail") return renderCamiones(view, ctx);
+  if (r === "camiones" || r === "truckForm" || r === "truckDetail" || r === "carroForm" || r === "carroDetail") return renderCamiones(view, ctx);
   if (r === "mantencion") {
     if (!can(p, "truck.manage")) { ctx.route = "home"; return renderPanel(view, ctx); }
     return renderMantencion(view, ctx);

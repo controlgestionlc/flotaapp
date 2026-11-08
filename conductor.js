@@ -261,23 +261,32 @@ function gpsBox(d) {
 }
 
 // ---------------- BITACORA ----------------
-function bitacora(view, ctx, t) {
-  if (!draft.bt) draft.bt = { tipo: "Falla mecánica", sev: "media", desc: "", gps: null, gpsState: "idle" };
+async function bitacora(view, ctx, t) {
+  // Carga una sola vez el carro asociado al camión (para poder reportar sobre él).
+  if (draft.carroFor !== t.id) { draft.carroFor = t.id; draft.carro = null; try { const cs = await store.listCarros(); draft.carro = cs.find(c => (c.camionId || "") === t.id) || null; } catch (e) {} }
+  const carro = draft.carro;
+  if (!draft.bt) draft.bt = { tipo: "Falla mecánica", sev: "media", desc: "", gps: null, gpsState: "idle", target: t.id };
   const d = draft.bt;
+  if (d.target !== t.id && (!carro || d.target !== carro.id)) d.target = t.id;
   const tipos = ["Falla mecánica", "Incidente", "Observación", "Combustible", "Kilometraje"];
   const tipoChips = tipos.map(x => '<button class="chip' + (d.tipo === x ? " on" : "") + '" data-tipo="' + esc(x) + '">' + esc(x) + "</button>").join("");
   const showSev = d.tipo === "Falla mecánica" || d.tipo === "Incidente";
   const sevChips = ["alta", "media", "baja"].map(s => '<button class="chip sev-' + s + (d.sev === s ? " on sev-" + s : "") + '" data-sev="' + s + '">' + ({ alta: "Alta", media: "Media", baja: "Baja" }[s]) + "</button>").join("");
+  const targetChips = carro ? '<label class="fld"><span class="lb">¿Sobre qué unidad?</span><div class="chips">' +
+    '<button class="chip' + (d.target === t.id ? " on" : "") + '" data-target="' + esc(t.id) + '">Camión ' + esc(t.num) + "</button>" +
+    '<button class="chip' + (d.target === carro.id ? " on" : "") + '" data-target="' + esc(carro.id) + '">Carro ' + esc(carro.num || carro.patente) + "</button></div></label>" : "";
   view.innerHTML =
     '<button class="backlink" id="bt-back">' + I.back + " Volver</button>" +
     '<div class="subhead"><h2>Registrar novedad</h2></div>' +
-    '<p class="meta-line" style="margin:-4px 2px 14px">' + esc(t.num + " · " + t.patente) + "</p>" +
-    '<div class="card pad section"><label class="fld"><span class="lb">Tipo de registro</span><div class="chips">' + tipoChips + "</div></label>" +
+    '<p class="meta-line" style="margin:-4px 2px 14px">' + esc(t.num + " · " + t.patente) + (carro ? " · Carro " + esc(carro.num || carro.patente) : "") + "</p>" +
+    '<div class="card pad section">' + targetChips +
+    '<label class="fld"><span class="lb">Tipo de registro</span><div class="chips">' + tipoChips + "</div></label>" +
     (showSev ? '<label class="fld"><span class="lb">Severidad</span><div class="chips">' + sevChips + "</div></label>" : "") +
     '<label class="fld" style="margin-bottom:0"><span class="lb">Descripción</span><textarea class="input" id="bt-desc" placeholder="Describe lo ocurrido...">' + esc(d.desc) + "</textarea></label></div>" +
     '<div class="card pad section">' + gpsBox(d) + "</div>" +
     '<div class="formbar"><button class="btn btn-primary" id="bt-submit">' + I.note + "Guardar en bitácora</button></div>";
 
+  $$("[data-target]", view).forEach(b => b.onclick = () => { syncBt(view); d.target = b.getAttribute("data-target"); bitacora(view, ctx, t); });
   $$("[data-tipo]", view).forEach(b => b.onclick = () => { syncBt(view); d.tipo = b.getAttribute("data-tipo"); bitacora(view, ctx, t); });
   $$("[data-sev]", view).forEach(b => b.onclick = () => { d.sev = b.getAttribute("data-sev"); bitacora(view, ctx, t); });
   const desc = $("#bt-desc", view); if (desc) desc.oninput = () => { d.desc = desc.value; };
@@ -286,9 +295,11 @@ function bitacora(view, ctx, t) {
   $("#bt-submit", view).onclick = async () => {
     syncBt(view);
     if (!d.desc.trim()) { toast("Escribe una descripción", "err"); return; }
+    const targetId = d.target || t.id;
     const rec = {
-      truckId: t.id, uid: ctx.profile.uid, deviceId: store.deviceId(), driverNombre: ctx.profile.nombre,
-      ts: Date.now(), tipo: d.tipo, sev: showSev ? d.sev : null, desc: d.desc.trim(), gps: d.gps
+      truckId: targetId, uid: ctx.profile.uid, deviceId: store.deviceId(), driverNombre: ctx.profile.nombre,
+      ts: Date.now(), tipo: d.tipo, sev: showSev ? d.sev : null, desc: d.desc.trim(), gps: d.gps,
+      sobreCarro: !!(carro && targetId === carro.id)
     };
     const btn = $("#bt-submit", view); btn.disabled = true; btn.textContent = "Guardando...";
     try { await store.addBitacora(rec); draft.bt = null; toast("Registro guardado en bitácora", "ok"); ctx.go("home", { screen: "home" }); }

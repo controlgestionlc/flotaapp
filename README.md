@@ -4,7 +4,7 @@ App web móvil (PWA) para gestionar la mantención preventiva y correctiva, y la
 
 Construida con **HTML + JavaScript modular (ES modules) + Firebase** (Authentication + Firestore), sin paso de build. Se abre directamente en el navegador, es instalable como app (PWA) y se despliega en Firebase Hosting o GitHub Pages.
 
-**Versión actual: 1.3.11**
+**Versión actual: 1.4.0**
 
 ## Novedades recientes (resumen)
 
@@ -13,6 +13,7 @@ Construida con **HTML + JavaScript modular (ES modules) + Firebase** (Authentica
 - **Planificación de flota:** matriz semanal, operación del día, plan vs. real, faenas, imprevistos, asignación automática (capacidad 18 MR / 20 M3, viajes por día y días de operación por faena), objetivo de metros y avance, reprogramación por falla. El detalle semanal se imprime o exporta a PDF.
 - **Clima por faena (Open-Meteo, sin API key):** pronóstico de 7 días con lluvia y temperatura máx/mín como señal de riesgo (el encargado confirma, nunca cierra faenas solo). **Historial de clima** por faena y por día desde el 1 de agosto de 2026, con actualización automática diaria e impresión.
 - **Recepción en planta (perfil Secretaria):** reserva de horario de recepción, planta de destino y guía de despacho por cada viaje (vuelta). Aparece un check en la planificación diaria y semanal cuando el día queda completo. Si el chofer ingresa una guía distinta a la reservada, se marca en rojo.
+- **Carros (remolques):** en el módulo Camiones hay una sección aparte para registrar carros, con patente y documentos igual que un camión. Cada carro se asocia a un solo camión (editable, con enroque automático: si el camión elegido ya tiene un carro, se intercambian). El carro tiene su propia gestión de fallas (reportadas por el supervisor o por el chofer del camión asociado) y sus propias órdenes de taller, con el mismo tratamiento que un camión. Los carros no aparecen en el tablero de disponibilidad ni en la planificación, porque no se conducen solos; su estado es independiente del camión.
 - **Asignación de chofer por camión:** el conductor solo puede seleccionar su camión asignado (ve el estado de los demás) y puede tomar uno de reserva si el suyo está en taller.
 - **Documento vencido = fuera de servicio automático:** si un camión tiene cualquier documento vencido (permiso de circulación, SOAP, revisión técnica u otros), queda automáticamente fuera de servicio: aparece en rojo en el panel, no es seleccionable por el conductor y no entra en la asignación de la planificación hasta regularizar el documento.
 - **Gestionar novedad:** al tocar una falla reportada en Disponibilidad se elige entre crear la orden de taller o descartarla indicando el motivo.
@@ -82,7 +83,7 @@ Cada checklist y cada registro de bitácora quedan sellados con el `uid` del usu
 
 - `users/{uid}` — perfil: `email`, `nombre`, `role`, `activo`, `createdAt`, `perms?` (permisos propios opcionales).
 - `devices/{deviceId}` — `ultimoUid`, `ultimoUso`, `userAgent`.
-- `trucks/{id}` — `num`, `patente`, `marca`, `modelo`, `anio`, `activo`, `docs`, `conductorUid?`, `conductorNombre?`.
+- `trucks/{id}` — `num`, `patente`, `marca`, `modelo`, `anio`, `activo`, `docs`, `conductorUid?`, `conductorNombre?`. Los **carros** viven en la misma colección con `tipo: "carro"` y `camionId` (camión asociado); `listTrucks` los excluye y `listCarros` los devuelve.
   - `docs.permisoCirculacion`, `docs.soap`, `docs.revisionTecnica` = `{ numero, vence }`; `docs.otros` = lista de `{ nombre, numero, vence }`.
 - `checklists/{id}` — `truckId`, `uid`, `deviceId`, `driverNombre`, `ts`, `items`, `fails`, `gps`, `obs`.
 - `bitacora/{id}` — `truckId`, `uid`, `deviceId`, `driverNombre`, `ts`, `tipo`, `sev`, `desc`, `gps`.

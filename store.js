@@ -341,8 +341,12 @@ export const store = {
   async createUser(data) { return A.createAuthUser(data); },
   async updateUser(uid, patch) { return A.update("users", uid, patch); },
 
-  // --- camiones ---
-  async listTrucks() { return (await A.list("trucks")).sort((a,b)=> (a.num||"").localeCompare(b.num||"")); },
+  // --- camiones y carros (misma colección "trucks"; los carros llevan tipo:"carro") ---
+  // listTrucks excluye los carros, para que el tablero, la planificación y la
+  // selección del chofer solo vean unidades que se conducen.
+  async listTrucks() { return (await A.list("trucks")).filter(t => t.tipo !== "carro").sort((a,b)=> (a.num||"").localeCompare(b.num||"")); },
+  async listCarros() { return (await A.list("trucks")).filter(t => t.tipo === "carro").sort((a,b)=> (a.num||a.patente||"").localeCompare(b.num||b.patente||"")); },
+  async listTrucksAll() { return (await A.list("trucks")).sort((a,b)=> (a.num||"").localeCompare(b.num||"")); },
   async getTruck(id) { return A.get("trucks", id); },
   async saveTruck(id, data) {
     if (id) { await A.set("trucks", id, data); return id; }

@@ -24,7 +24,7 @@ export async function renderPanel(view, ctx) {
   return dashboard(view, ctx);
 }
 
-function openFallas(cks, bits, orders, resolved) {
+export function openFallas(cks, bits, orders, resolved) {
   const linked = new Set(); orders.forEach(o => (o.sources || []).forEach(s => linked.add(s)));
   const res = new Set(resolved);
   const rank = { alta: 0, media: 1, baja: 2 };
@@ -111,9 +111,11 @@ function buildAlerts(trucks, orders) {
 
 async function dashboard(view, ctx) {
   const p = ctx.profile;
-  const [trucks, cks, bits, orders, resolvedDocs, fuel] = await Promise.all([
-    store.listTrucks(), store.listChecklists(), store.listBitacora(), store.listOrders(), store.listResolvedDocs(), store.listFuel()
+  const [trucks, cks, bits, orders, resolvedDocs, fuel, carros] = await Promise.all([
+    store.listTrucks(), store.listChecklists(), store.listBitacora(), store.listOrders(), store.listResolvedDocs(), store.listFuel(), store.listCarros()
   ]);
+  // Para resolver el número de la unidad (camión o carro) en órdenes y fallas.
+  const trucksAll = trucks.concat(carros);
   const resolved = resolvedDocs.map(r => r.id);
   const fallas = openFallas(cks, bits, orders, resolved);
   const manage = can(p, "order.manage");
@@ -165,7 +167,7 @@ async function dashboard(view, ctx) {
   const descBlock = (!can(p, "falla.view") || !descRecientes.length) ? "" :
     ('<div class="section"><span class="eyebrow">Fallas descartadas (' + resolvedDocs.length + ')</span><div class="card" style="margin-top:8px">' +
       descRecientes.map(r => {
-        const t = trucks.find(x => x.id === r.truckId) || { num: "?", patente: "" };
+        const t = trucksAll.find(x => x.id === r.truckId) || { num: "?", patente: "" };
         return '<div class="row"><span class="sev-stripe sev-baja"></span><div class="rl">' +
           '<div class="t" style="text-decoration:line-through;color:var(--ink-2)">' + esc(r.titulo || "Falla") + "</div>" +
           '<div class="m"><span>' + iconSpan("truck") + esc(t.num) + "</span>" + (r.driverFalla ? "<span>Reportó: " + esc(r.driverFalla) + "</span>" : "") + "<span>" + fmtDateTime(r.ts) + "</span></div>" +
@@ -189,7 +191,7 @@ async function dashboard(view, ctx) {
   view.innerHTML = kpis + availBoard + '<div class="section dash-two">' + alertsCard + ordersCard + "</div>" + descBlock;
 
   $$("[data-avail]", view).forEach(b => b.onclick = () => availSheet(ctx, b.getAttribute("data-avail"), trucks, orders, fallas));
-  $$("[data-kpi]", view).forEach(b => b.onclick = () => kpiDetail(ctx, b.getAttribute("data-kpi"), { trucks, orders, fallas, avail, openOrders, mesTotal }));
+  $$("[data-kpi]", view).forEach(b => b.onclick = () => kpiDetail(ctx, b.getAttribute("data-kpi"), { trucks: trucksAll, orders, fallas, avail, openOrders, mesTotal }));
   // Alertas → panel lateral
   $("#alr-open", view).onclick = () => openDrawer("Alertas (" + alerts.length + ")", alertsDrawerBody, () => {
     $$("[data-alert-truck]").forEach(b => b.onclick = () => { closeSheet(); ctx.go("truckDetail", { id: b.getAttribute("data-alert-truck") }); });
@@ -344,7 +346,7 @@ function row2(k, v) {
 // El supervisor/admin reporta una falla del camión desde el panel. Se guarda
 // igual que la del chofer: entra a "Fallas por gestionar" (crear orden / descartar)
 // y una severidad alta deja el camión fuera de servicio.
-function reportarFallaAdmin(ctx, truckId, truckNum) {
+export function reportarFallaAdmin(ctx, truckId, truckNum) {
   const tipos = ["Falla mecánica", "Incidente"];
   const st = { tipo: "Falla mecánica", sev: "alta", desc: "" };
   const tipoChips = tipos.map(x => '<button class="chip' + (st.tipo === x ? " on" : "") + '" data-rf-t="' + esc(x) + '">' + esc(x) + "</button>").join("");
@@ -376,7 +378,7 @@ function reportarFallaAdmin(ctx, truckId, truckNum) {
 // Ventana de creación de orden de taller. Se abre desde una falla (prefill) o
 // como orden nueva (truckId directo). Permite ingresar todos los datos antes de
 // crear la orden; luego navega al detalle para seguir gestionándola.
-function createOrder(ctx, fid, fallas, truckId) {
+export function createOrder(ctx, fid, fallas, truckId) {
   const f = fid ? (fallas || []).find(x => x.id === fid) : null;
   const tId = f ? f.truckId : truckId;
   if (!tId) return;
@@ -447,7 +449,7 @@ async function asignarChofer(ctx, t) {
       };
     });
 }
-function resolveFalla(ctx, fid, fallas) {
+export function resolveFalla(ctx, fid, fallas) {
   const f = (fallas || []).find(x => x.id === fid);
   openSheet("Descartar falla",
     '<p style="margin:0 0 4px;font-weight:600">' + (f ? esc(f.titulo) : "") + "</p>" +
@@ -474,7 +476,7 @@ function resolveFalla(ctx, fid, fallas) {
 
 // Al tocar una novedad reportada: elegir entre crear una orden de taller
 // o descartarla (con motivo). Ambas acciones ya existen por separado.
-function chooseFallaAction(ctx, fid, fallas) {
+export function chooseFallaAction(ctx, fid, fallas) {
   const f = (fallas || []).find(x => x.id === fid);
   openSheet("Gestionar novedad",
     '<p style="margin:0 0 4px;font-weight:600">' + (f ? esc(f.titulo) : "") + "</p>" +
@@ -490,7 +492,7 @@ function chooseFallaAction(ctx, fid, fallas) {
 // ---------------- ORDEN detalle ----------------
 async function orderDetail(view, ctx) {
   const orders = await store.listOrders();
-  const trucks = await store.listTrucks();
+  const trucks = await store.listTrucksAll();
   const o = orders.find(x => x.id === ctx.params.id);
   if (!o) return dashboard(view, ctx);
   const t = trucks.find(x => x.id === o.truckId) || { num: "?", marca: "", patente: "" };
@@ -592,7 +594,8 @@ async function orderDetail(view, ctx) {
 
   const backFromOrder = () => {
     orderDraft = null;
-    if (ctx.params.truckId) ctx.go("resumen", { id: ctx.params.truckId, from: ctx.params.from || "home" });
+    if (ctx.params.carroId) ctx.go("carroDetail", { id: ctx.params.carroId });
+    else if (ctx.params.truckId) ctx.go("resumen", { id: ctx.params.truckId, from: ctx.params.from || "home" });
     else ctx.go("home", {});
   };
   $("#o-back", view).onclick = backFromOrder;
