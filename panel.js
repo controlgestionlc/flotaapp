@@ -52,10 +52,18 @@ function truckStatus(id, orders, fallas) {
   if (fs.length || open.length) return { cls: "warn", label: "Con novedad" };
   return { cls: "ok", label: "Operativo" };
 }
-function orderTotal(o) { return (o.repuestos || []).reduce((s, x) => s + (Number(x.costo) || 0), 0) + (Number(o.manoObra) || 0) + (Number(o.otrosGastos) || 0); }
+// Bitácora de compras/fletes/servicios de la orden (movimientos).
+const MOV_TIPOS = [["repuesto", "Repuesto"], ["flete", "Flete"], ["servicio", "Servicio"], ["otro", "Otro"]];
+const movLabel = k => (MOV_TIPOS.find(x => x[0] === k) || [, "Otro"])[1];
+function movTotal(o) { return (o.movimientos || []).reduce((s, m) => s + (Number(m.total) || 0), 0); }
+// Total acumulado de la orden: compras/servicios + repuestos (legado) + mano de obra + otros gastos.
+function orderTotal(o) { return movTotal(o) + (o.repuestos || []).reduce((s, x) => s + (Number(x.costo) || 0), 0) + (Number(o.manoObra) || 0) + (Number(o.otrosGastos) || 0); }
 // Solo dígitos (para guardar) y formato con separador de miles (para mostrar).
 const soloNum = v => String(v == null ? "" : v).replace(/\D/g, "");
 const miles = v => { const s = soloNum(v); return s ? Number(s).toLocaleString("es-CL") : ""; };
+// Cantidad: acepta entero o decimal (coma o punto). Devuelve número.
+function parseCant(v) { let s = String(v == null ? "" : v).trim(); if (!s) return 0; if (s.includes(",")) s = s.replace(/\./g, "").replace(",", "."); const n = parseFloat(s); return isFinite(n) ? n : 0; }
+const nfCant = n => { const x = Number(n) || 0; return x % 1 === 0 ? String(x) : x.toLocaleString("es-CL", { maximumFractionDigits: 2 }); };
 
 // Semáforo de disponibilidad operativa del camión.
 // verde = operativo · amarillo = observación · rojo = fuera de servicio
@@ -490,7 +498,9 @@ async function orderDetail(view, ctx) {
     estado: o.estado, taller: o.taller || "", fecha: o.fechaAgendada ? dInput(o.fechaAgendada) : "",
     estim: soloNum(o.costoEstimado), entrega: o.fechaEntregaEstimada ? dInput(o.fechaEntregaEstimada) : "",
     trabajo: o.trabajo || "", manoObra: soloNum(o.manoObra), otrosGastos: soloNum(o.otrosGastos),
-    repuestos: (o.repuestos || []).map(r => ({ desc: r.desc, costo: soloNum(r.costo) }))
+    repuestos: (o.repuestos || []).map(r => ({ desc: r.desc, costo: soloNum(r.costo) })),
+    movimientos: (o.movimientos || []).map(m => Object.assign({}, m)),
+    novedades: (o.novedades || []).map(n => Object.assign({}, n))
   };
   const d = orderDraft;
   const e = EST[o.estado];
@@ -498,13 +508,43 @@ async function orderDetail(view, ctx) {
   const estados = ["pendiente", "agendado", "en_taller"];
   const estChips = estados.map(s => '<button class="chip' + (d.estado === s ? " on" : "") + '" data-est="' + s + '"' + (editable ? "" : " disabled") + ">" + EST[s].l + "</button>").join("");
   const needTrabajo = d.estado === "completado" && !String(d.trabajo || "").trim();
-  const reps = d.repuestos.map((r, i) =>
-    '<div class="rep-row"><input class="input" data-rep="' + i + '" data-f="desc" placeholder="Repuesto / descripción" value="' + esc(r.desc || "") + '">' +
-    '<input class="input cost num" data-rep="' + i + '" data-f="costo" inputmode="numeric" placeholder="$" value="' + esc(miles(r.costo)) + '">' +
-    '<button class="del" data-delrep="' + i + '">' + I.x + "</button></div>").join("");
-  const total = d.repuestos.reduce((s, r) => s + (Number(r.costo) || 0), 0) + (Number(d.manoObra) || 0) + (Number(d.otrosGastos) || 0);
-  const showWork = d.estado === "completado" || d.estado === "en_taller";
   const esDesc = o.estado === "descartada";
+  // Acumulados de costo de la orden.
+  const accCompras = d.movimientos.reduce((s, m) => s + (Number(m.total) || 0), 0) + d.repuestos.reduce((s, r) => s + (Number(r.costo) || 0), 0);
+  const accMano = Number(d.manoObra) || 0, accOtros = Number(d.otrosGastos) || 0;
+  const accTotal = accCompras + accMano + accOtros;
+  const canEdit = editable && !esDesc;
+  // Filas de la bitácora de compras/fletes/servicios.
+  const movRows = d.movimientos.map((m, i) =>
+    '<div class="row"' + (canEdit ? ' data-mov="' + i + '" style="cursor:pointer"' : '') + '>' +
+    '<div class="rl"><div class="t">' + esc(m.descripcion || movLabel(m.tipo)) + ' <span class="pill neutral">' + esc(movLabel(m.tipo)) + "</span></div>" +
+    '<div class="m">' + (m.docto ? "<span>Doc " + esc(m.docto) + "</span>" : "") + (m.proveedor ? "<span>" + esc(m.proveedor) + "</span>" : "") + (m.fecha ? "<span>" + fmtDate(m.fecha) + "</span>" : "") +
+    "<span>" + nfCant(m.cantidad) + " × " + fmtCLP(m.precioUnit) + "</span></div></div>" +
+    '<b class="num">' + fmtCLP(m.total) + "</b>" +
+    (canEdit ? '<button class="del" data-delmov="' + i + '">' + I.x + "</button>" : "") + "</div>").join("");
+  // Repuestos registrados con el formato anterior (solo historial, no editable).
+  const legacyRows = d.repuestos.map(r =>
+    '<div class="row"><div class="rl"><div class="t">' + esc(r.desc || "Repuesto") + ' <span class="pill neutral">Repuesto</span></div>' +
+    '<div class="m"><span>registro anterior</span></div></div><b class="num">' + fmtCLP(r.costo) + "</b></div>").join("");
+  const movListHtml = (movRows + legacyRows) || '<div class="meta-line" style="padding:10px 2px;font-size:.82rem">Sin compras ni servicios registrados.</div>';
+  // Novedades / avance (más recientes primero).
+  const novRows = d.novedades.slice().sort((a, b) => (b.ts || 0) - (a.ts || 0)).map(n =>
+    '<div class="row"><div class="rl"><div class="t" style="white-space:normal;font-weight:500">' + esc(n.texto || "") + "</div>" +
+    '<div class="m"><span>' + fmtDateTime(n.ts) + "</span>" + (n.por ? "<span>" + esc(n.por) + "</span>" : "") + "</div></div></div>").join("");
+  const novListHtml = novRows || '<div class="meta-line" style="padding:10px 2px;font-size:.82rem">Sin novedades registradas.</div>';
+  // Tarjeta resumen (monto acumulado) visible al abrir la orden.
+  const resumenCard = '<div class="card pad section"><div class="total-line" style="margin:0;border:0;padding:0"><span class="eyebrow">Total acumulado de la orden</span><b class="num" id="o-acc" style="font-size:1.3rem">' + fmtCLP(accTotal) + "</b></div>" +
+    '<div class="meta-line" id="o-acc-break" style="margin-top:6px;font-size:.8rem">Compras/servicios ' + fmtCLP(accCompras) + " · Mano de obra " + fmtCLP(accMano) + " · Otros " + fmtCLP(accOtros) + "</div></div>";
+  // Tarjeta bitácora de compras/fletes/servicios (siempre visible como historial).
+  const comprasCard = '<div class="card pad section"><span class="eyebrow" style="display:block;margin-bottom:10px">Compras, fletes y servicios</span>' +
+    '<div id="mov-list">' + movListHtml + "</div>" +
+    '<div class="total-line"><span class="eyebrow">Acumulado compras/servicios</span><b class="num">' + fmtCLP(accCompras) + "</b></div>" +
+    (canEdit ? '<button class="btn sm btn-soft" id="o-addmov" style="margin-top:12px">' + I.plus + "Agregar compra / servicio</button>" : "") + "</div>";
+  // Tarjeta novedades / avance.
+  const novCard = '<div class="card pad section"><span class="eyebrow" style="display:block;margin-bottom:10px">Novedades / avance</span>' +
+    '<div id="nov-list">' + novListHtml + "</div>" +
+    (canEdit ? '<button class="btn sm btn-soft" id="o-addnov" style="margin-top:12px">' + I.plus + "Agregar novedad</button>" : "") + "</div>";
+  const showWork = d.estado === "completado" || d.estado === "en_taller";
   const descBanner = esDesc
     ? '<div class="card pad section" style="border-color:var(--line)"><span class="eyebrow" style="display:block;margin-bottom:6px">Orden descartada</span>' +
       '<p style="margin:0;font-size:.9rem;color:var(--ink-2)">' + esc((o.descartada && o.descartada.motivo) || "") + "</p>" +
@@ -532,19 +572,18 @@ async function orderDetail(view, ctx) {
     '<div class="meta-line" style="margin-top:8px;font-size:.8rem">Reportado por ' + esc(o.reportadoPor || "chofer") + " · " + fmtDateTime(o.createdAt) + "</div></div>" +
     '<button class="btn btn-soft section" id="o-print">' + I.doc + "Imprimir orden / Guardar PDF</button>" +
     descBanner +
+    resumenCard +
     '<div class="card pad section"><label class="fld"><span class="lb">Estado</span><div class="chips">' + estChips + "</div></label>" +
     '<label class="fld"><span class="lb">Taller</span><input class="input" id="o-taller" placeholder="Nombre del taller" value="' + esc(d.taller) + '"' + (editable ? "" : " disabled") + "></label>" +
     '<label class="fld"><span class="lb">Fecha agendada</span><input class="input" type="date" id="o-fecha" value="' + esc(d.fecha) + '"' + (editable ? "" : " disabled") + "></label>" +
     '<label class="fld"><span class="lb">Costo estimado de reparación</span><input class="input num" id="o-estim" inputmode="numeric" placeholder="$" value="' + esc(miles(d.estim)) + '"' + (editable ? "" : " disabled") + "></label>" +
     '<label class="fld" style="margin-bottom:0"><span class="lb">Fecha estimada de entrega</span><input class="input" type="date" id="o-entrega" value="' + esc(d.entrega) + '"' + (editable ? "" : " disabled") + "></label></div>" +
+    comprasCard +
     (showWork ? '<div class="card pad section"><span class="eyebrow" style="display:block;margin-bottom:12px">Trabajo realizado</span>' +
       '<label class="fld"><span class="lb">Descripción del trabajo</span><textarea class="input" id="o-trabajo" placeholder="Qué se hizo en el taller..."' + (editable ? "" : " disabled") + ">" + esc(d.trabajo) + "</textarea></label>" +
-      '<span class="lb" style="display:block;font-family:Barlow Semi Condensed;font-weight:600;font-size:.82rem;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-2);margin-bottom:8px">Repuestos</span>' +
-      '<div id="rep-list">' + reps + "</div>" +
-      (editable ? '<button class="btn sm btn-soft" id="o-addrep" style="margin-bottom:14px">' + I.plus + "Agregar repuesto</button>" : "") +
       '<label class="fld"><span class="lb">Mano de obra</span><input class="input num" id="o-mano" inputmode="numeric" placeholder="$" value="' + esc(miles(d.manoObra)) + '"' + (editable ? "" : " disabled") + "></label>" +
-      '<label class="fld"><span class="lb">Otros gastos</span><input class="input num" id="o-otros" inputmode="numeric" placeholder="$" value="' + esc(miles(d.otrosGastos)) + '"' + (editable ? "" : " disabled") + "></label>" +
-      '<div class="total-line"><span class="eyebrow">Costo total</span><b class="num">' + fmtCLP(total) + "</b></div></div>" : "") +
+      '<label class="fld" style="margin-bottom:0"><span class="lb">Otros gastos</span><input class="input num" id="o-otros" inputmode="numeric" placeholder="$" value="' + esc(miles(d.otrosGastos)) + '"' + (editable ? "" : " disabled") + "></label></div>" : "") +
+    novCard +
     completeCard +
     descBtn +
     (editable && !esDesc ? '<div class="formbar"><button class="btn btn-primary" id="o-save"' + (needTrabajo ? " disabled" : "") + ">" + I.check + "Guardar orden</button></div>" : "");
@@ -568,50 +607,145 @@ async function orderDetail(view, ctx) {
   };
   const cbtn = $("#o-complete", view);
   if (cbtn) cbtn.onclick = () => { syncOrder(view); d.estado = d.estado === "completado" ? "en_taller" : "completado"; orderDetail(view, ctx); };
-  // Recalcula el "Costo total" en vivo: repuestos + mano de obra + otros gastos.
-  const recalcTotal = () => { const el = $(".total-line b", view); if (el) el.textContent = fmtCLP(d.repuestos.reduce((s, r) => s + (Number(r.costo) || 0), 0) + (Number(d.manoObra) || 0) + (Number(d.otrosGastos) || 0)); };
+  // Recalcula el monto acumulado en vivo al cambiar mano de obra u otros gastos.
+  const recalc = () => {
+    const comp = d.movimientos.reduce((s, m) => s + (Number(m.total) || 0), 0) + d.repuestos.reduce((s, r) => s + (Number(r.costo) || 0), 0);
+    const mano = Number(d.manoObra) || 0, otros = Number(d.otrosGastos) || 0;
+    const a = $("#o-acc", view); if (a) a.textContent = fmtCLP(comp + mano + otros);
+    const bk = $("#o-acc-break", view); if (bk) bk.textContent = "Compras/servicios " + fmtCLP(comp) + " · Mano de obra " + fmtCLP(mano) + " · Otros " + fmtCLP(otros);
+  };
   const bindF = (id, f) => { const el = $(id, view); if (el) el.oninput = () => { d[f] = el.value; if (f === "trabajo") updateSaveState(); }; };
   // Campos de dinero: guardan solo dígitos y muestran separador de miles en vivo.
-  const bindMoney = (id, f) => { const el = $(id, view); if (el) el.oninput = () => { d[f] = soloNum(el.value); el.value = miles(d[f]); recalcTotal(); }; };
+  const bindMoney = (id, f) => { const el = $(id, view); if (el) el.oninput = () => { d[f] = soloNum(el.value); el.value = miles(d[f]); recalc(); }; };
   bindF("#o-taller", "taller"); bindF("#o-trabajo", "trabajo");
   bindMoney("#o-mano", "manoObra"); bindMoney("#o-otros", "otrosGastos"); bindMoney("#o-estim", "estim");
   const fecha = $("#o-fecha", view); if (fecha) fecha.onchange = () => { d.fecha = fecha.value; };
   const entrega = $("#o-entrega", view); if (entrega) entrega.onchange = () => { d.entrega = entrega.value; };
-  $$("[data-rep]", view).forEach(inp => inp.oninput = () => {
-    const i = +inp.getAttribute("data-rep"), f = inp.getAttribute("data-f");
-    if (f === "costo") { d.repuestos[i].costo = soloNum(inp.value); inp.value = miles(d.repuestos[i].costo); recalcTotal(); }
-    else d.repuestos[i][f] = inp.value;
+  // Bitácora de compras/fletes/servicios.
+  const amv = $("#o-addmov", view); if (amv) amv.onclick = () => { syncOrder(view); movForm(ctx, view, o, d, null); };
+  $$("[data-mov]", view).forEach(r => r.onclick = (ev) => { if (ev.target.closest("[data-delmov]")) return; syncOrder(view); movForm(ctx, view, o, d, +r.getAttribute("data-mov")); });
+  $$("[data-delmov]", view).forEach(b => b.onclick = async (ev) => {
+    ev.stopPropagation(); syncOrder(view); d.movimientos.splice(+b.getAttribute("data-delmov"), 1);
+    try { await persistOrderDraft(o, d); toast("Registro eliminado", "ok"); orderDetail(view, ctx); }
+    catch (e) { toast("No se pudo eliminar: " + (e.message || e), "err"); }
   });
-  $$("[data-delrep]", view).forEach(b => b.onclick = () => { syncOrder(view); d.repuestos.splice(+b.getAttribute("data-delrep"), 1); orderDetail(view, ctx); });
-  const ar = $("#o-addrep", view); if (ar) ar.onclick = () => { syncOrder(view); d.repuestos.push({ desc: "", costo: "" }); orderDetail(view, ctx); };
+  // Novedades / avance.
+  const anv = $("#o-addnov", view); if (anv) anv.onclick = () => { syncOrder(view); novForm(ctx, view, o, d); };
   $("#o-save", view).onclick = async () => {
     syncOrder(view);
     if (d.estado === "completado" && !String(d.trabajo).trim()) { toast("Describe el trabajo realizado", "err"); return; }
-    const reps = d.repuestos.filter(r => (r.desc && r.desc.trim()) || Number(r.costo)).map(r => ({ desc: (r.desc || "").trim(), costo: Math.round(Number(r.costo) || 0) }));
-    const patch = {
-      estado: d.estado, taller: String(d.taller).trim(),
-      fechaAgendada: d.fecha ? new Date(d.fecha + "T12:00:00").getTime() : null,
-      costoEstimado: Math.round(Number(d.estim) || 0),
-      fechaEntregaEstimada: d.entrega ? new Date(d.entrega + "T12:00:00").getTime() : null,
-      trabajo: String(d.trabajo).trim(), repuestos: reps, manoObra: Math.round(Number(d.manoObra) || 0),
-      otrosGastos: Math.round(Number(d.otrosGastos) || 0),
-      completedAt: d.estado === "completado" ? (o.completedAt || Date.now()) : null,
-      descartada: null
-    };
     const btn = $("#o-save", view); btn.disabled = true; btn.textContent = "Guardando...";
-    try { await store.saveOrder(o.id, Object.assign({}, o, patch)); orderDraft = null; toast("Orden actualizada", "ok"); backFromOrder(); }
+    try { await store.saveOrder(o.id, Object.assign({}, o, buildOrderPatch(o, d))); orderDraft = null; toast("Orden actualizada", "ok"); backFromOrder(); }
     catch (e) { toast("No se pudo guardar: " + (e.message || e), "err"); btn.disabled = false; btn.textContent = "Guardar orden"; }
   };
+}
+
+// Construye el objeto a guardar desde el borrador (incluye movimientos y novedades).
+function buildOrderPatch(o, d) {
+  const reps = (d.repuestos || []).filter(r => (r.desc && r.desc.trim()) || Number(r.costo)).map(r => ({ desc: (r.desc || "").trim(), costo: Math.round(Number(r.costo) || 0) }));
+  const movimientos = (d.movimientos || []).map(m => ({
+    id: m.id || ("mv_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)),
+    tipo: m.tipo || "otro", docto: (m.docto || "").trim(), fecha: m.fecha || null,
+    proveedor: (m.proveedor || "").trim(), descripcion: (m.descripcion || "").trim(),
+    precioUnit: Math.round(Number(m.precioUnit) || 0), cantidad: Number(m.cantidad) || 0,
+    total: Math.round((Number(m.precioUnit) || 0) * (Number(m.cantidad) || 0))
+  }));
+  const novedades = (d.novedades || []).map(n => ({ id: n.id, ts: n.ts, texto: n.texto, por: n.por || "" }));
+  return {
+    estado: d.estado, taller: String(d.taller).trim(),
+    fechaAgendada: d.fecha ? new Date(d.fecha + "T12:00:00").getTime() : null,
+    costoEstimado: Math.round(Number(d.estim) || 0),
+    fechaEntregaEstimada: d.entrega ? new Date(d.entrega + "T12:00:00").getTime() : null,
+    trabajo: String(d.trabajo || "").trim(), repuestos: reps,
+    manoObra: Math.round(Number(d.manoObra) || 0), otrosGastos: Math.round(Number(d.otrosGastos) || 0),
+    movimientos, novedades,
+    completedAt: d.estado === "completado" ? (o.completedAt || Date.now()) : null,
+    descartada: null
+  };
+}
+
+// Guarda de inmediato el borrador actual (al agregar/eliminar compras o novedades).
+async function persistOrderDraft(o, d) {
+  await store.saveOrder(o.id, Object.assign({}, o, buildOrderPatch(o, d)));
+}
+
+// Formulario para agregar o editar una compra / flete / servicio.
+function movForm(ctx, view, o, d, idx) {
+  const src = idx != null && d.movimientos[idx] ? d.movimientos[idx] : {};
+  const st = {
+    tipo: src.tipo || "repuesto", docto: src.docto || "",
+    fecha: src.fecha ? dInput(src.fecha) : dInput(Date.now()),
+    proveedor: src.proveedor || "", descripcion: src.descripcion || "",
+    precioUnit: soloNum(src.precioUnit), cantidad: src.cantidad != null && src.cantidad !== "" ? nfCant(src.cantidad) : "1"
+  };
+  const tipoChips = MOV_TIPOS.map(x => '<button class="chip' + (st.tipo === x[0] ? " on" : "") + '" data-mt="' + x[0] + '">' + x[1] + "</button>").join("");
+  const liveTotal = () => fmtCLP((Number(soloNum(($("#mv-precio") || {}).value || st.precioUnit)) || 0) * parseCant(($("#mv-cant") || {}).value || st.cantidad));
+  openSheet(idx != null ? "Editar compra / servicio" : "Agregar compra / servicio",
+    '<label class="fld"><span class="lb">Tipo</span><div class="chips" id="mv-tipo">' + tipoChips + "</div></label>" +
+    '<label class="fld"><span class="lb">N° de documento</span><input class="input" id="mv-docto" placeholder="N° factura / boleta / guía" value="' + esc(st.docto) + '"></label>' +
+    '<label class="fld"><span class="lb">Fecha</span><input class="input" type="date" id="mv-fecha" value="' + esc(st.fecha) + '"></label>' +
+    '<label class="fld"><span class="lb">Proveedor</span><input class="input" id="mv-prov" placeholder="Nombre del proveedor" value="' + esc(st.proveedor) + '"></label>' +
+    '<label class="fld"><span class="lb">Descripción</span><input class="input" id="mv-desc" placeholder="Detalle del repuesto / servicio" value="' + esc(st.descripcion) + '"></label>' +
+    '<div class="rep-row" style="gap:10px">' +
+    '<label class="fld" style="flex:1;margin:0"><span class="lb">Precio unitario</span><input class="input num" id="mv-precio" inputmode="numeric" placeholder="$" value="' + esc(miles(st.precioUnit)) + '"></label>' +
+    '<label class="fld" style="width:96px;margin:0"><span class="lb">Cantidad</span><input class="input num" id="mv-cant" inputmode="decimal" placeholder="1" value="' + esc(st.cantidad) + '"></label></div>' +
+    '<div class="total-line"><span class="eyebrow">Total neto</span><b class="num" id="mv-total">' + liveTotal() + "</b></div>" +
+    '<button class="btn btn-primary" id="mv-ok" style="width:100%;margin-top:6px">' + I.check + (idx != null ? "Guardar cambios" : "Agregar") + "</button>",
+    () => {
+      $$("#mv-tipo [data-mt]").forEach(b => b.onclick = () => { st.tipo = b.getAttribute("data-mt"); $$("#mv-tipo [data-mt]").forEach(x => x.classList.remove("on")); b.classList.add("on"); });
+      const recalcMv = () => { const el = $("#mv-total"); if (el) el.textContent = liveTotal(); };
+      const pe = $("#mv-precio"); if (pe) pe.oninput = () => { pe.value = miles(soloNum(pe.value)); recalcMv(); };
+      const ce = $("#mv-cant"); if (ce) ce.oninput = recalcMv;
+      $("#mv-ok").onclick = async () => {
+        const precioUnit = Number(soloNum($("#mv-precio").value)) || 0;
+        const cantidad = parseCant($("#mv-cant").value);
+        const descripcion = ($("#mv-desc").value || "").trim();
+        if (!precioUnit && !descripcion) { toast("Ingresa al menos descripción o precio", "err"); return; }
+        const fv = $("#mv-fecha").value;
+        const mov = {
+          id: (idx != null && d.movimientos[idx] && d.movimientos[idx].id) ? d.movimientos[idx].id : ("mv_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)),
+          tipo: st.tipo, docto: ($("#mv-docto").value || "").trim(),
+          fecha: fv ? new Date(fv + "T12:00:00").getTime() : null,
+          proveedor: ($("#mv-prov").value || "").trim(), descripcion,
+          precioUnit: Math.round(precioUnit), cantidad, total: Math.round(precioUnit * cantidad)
+        };
+        if (idx != null) d.movimientos[idx] = mov; else d.movimientos.push(mov);
+        const btn = $("#mv-ok"); btn.disabled = true; btn.textContent = "Guardando...";
+        try { await persistOrderDraft(o, d); closeSheet(); toast("Registro guardado", "ok"); orderDetail(view, ctx); }
+        catch (e) { toast("No se pudo guardar: " + (e.message || e), "err"); btn.disabled = false; btn.textContent = idx != null ? "Guardar cambios" : "Agregar"; }
+      };
+    });
+}
+
+// Formulario para agregar una novedad / avance a la orden.
+function novForm(ctx, view, o, d) {
+  openSheet("Agregar novedad",
+    '<label class="fld"><span class="lb">Novedad / avance</span><textarea class="input" id="nv-texto" placeholder="Ej: repuesto pedido, en espera de llegada; avance del 50%..."></textarea></label>' +
+    '<button class="btn btn-primary" id="nv-ok" style="width:100%">' + I.check + "Agregar</button>",
+    () => {
+      const ta = $("#nv-texto"); if (ta) ta.focus();
+      $("#nv-ok").onclick = async () => {
+        const texto = ($("#nv-texto").value || "").trim();
+        if (!texto) { toast("Escribe la novedad", "err"); return; }
+        d.novedades.push({ id: "nv_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ts: Date.now(), texto, por: ctx.profile.nombre });
+        const btn = $("#nv-ok"); btn.disabled = true; btn.textContent = "Guardando...";
+        try { await persistOrderDraft(o, d); closeSheet(); toast("Novedad agregada", "ok"); orderDetail(view, ctx); }
+        catch (e) { toast("No se pudo guardar: " + (e.message || e), "err"); btn.disabled = false; btn.textContent = "Agregar"; }
+      };
+    });
 }
 
 // Formato de impresión de la orden de taller con logo y datos de la empresa.
 async function printOrden(o, t) {
   let co = {}; try { co = await store.getCompany(); } catch (e) { co = {}; }
   const old = document.getElementById("print-area"); if (old) old.remove();
-  const rep = (o.repuestos || []).filter(r => (r.desc && r.desc.trim()) || Number(r.costo));
-  const repRows = rep.length
-    ? rep.map(r => '<tr><td>' + esc(r.desc || "") + '</td><td class="r">' + fmtCLP(Number(r.costo) || 0) + "</td></tr>").join("")
-    : '<tr><td colspan="2" style="color:#777">Sin repuestos registrados</td></tr>';
+  const movs = (o.movimientos || []);
+  const legacy = (o.repuestos || []).filter(r => (r.desc && r.desc.trim()) || Number(r.costo));
+  let itemRows = movs.map(m => '<tr><td>' + esc(movLabel(m.tipo)) + (m.docto ? " · Doc " + esc(m.docto) : "") + (m.proveedor ? " · " + esc(m.proveedor) : "") +
+      (m.descripcion ? '<br><span style="color:#555">' + esc(m.descripcion) + "</span>" : "") + "</td>" +
+      '<td class="r">' + nfCant(m.cantidad) + " × " + fmtCLP(m.precioUnit) + '</td><td class="r">' + fmtCLP(m.total) + "</td></tr>").join("");
+  itemRows += legacy.map(r => '<tr><td>' + esc(r.desc || "") + '</td><td class="r"></td><td class="r">' + fmtCLP(Number(r.costo) || 0) + "</td></tr>").join("");
+  if (!itemRows) itemRows = '<tr><td colspan="3" style="color:#777">Sin compras ni servicios registrados</td></tr>';
   const mano = Number(o.manoObra) || 0;
   const otros = Number(o.otrosGastos) || 0;
   const total = orderTotal(o);
@@ -644,12 +778,14 @@ async function printOrden(o, t) {
     "</div>" +
     '<div class="po-sec"><h2>Problema / motivo</h2><p>' + esc(o.titulo || "") + (o.detalle ? "<br>" + esc(o.detalle) : "") + "</p></div>" +
     (o.trabajo ? '<div class="po-sec"><h2>Trabajo realizado</h2><p>' + esc(o.trabajo) + "</p></div>" : "") +
-    '<div class="po-sec"><h2>Repuestos y costos</h2><table class="po-table"><thead><tr><th>Descripción</th><th class="r">Costo</th></tr></thead><tbody>' +
-      repRows +
-      '<tr><td class="r">Mano de obra</td><td class="r">' + fmtCLP(mano) + "</td></tr>" +
-      (otros ? '<tr><td class="r">Otros gastos</td><td class="r">' + fmtCLP(otros) + "</td></tr>" : "") +
-      '<tr class="po-tot"><td class="r">TOTAL</td><td class="r">' + fmtCLP(total) + "</td></tr>" +
+    '<div class="po-sec"><h2>Compras, fletes y servicios</h2><table class="po-table"><thead><tr><th>Descripción</th><th class="r">Cant. × P. unit.</th><th class="r">Total</th></tr></thead><tbody>' +
+      itemRows +
+      '<tr><td class="r" colspan="2">Mano de obra</td><td class="r">' + fmtCLP(mano) + "</td></tr>" +
+      (otros ? '<tr><td class="r" colspan="2">Otros gastos</td><td class="r">' + fmtCLP(otros) + "</td></tr>" : "") +
+      '<tr class="po-tot"><td class="r" colspan="2">TOTAL</td><td class="r">' + fmtCLP(total) + "</td></tr>" +
       "</tbody></table></div>" +
+    ((o.novedades && o.novedades.length) ? '<div class="po-sec"><h2>Novedades / avance</h2>' +
+      o.novedades.slice().sort((a, b) => (a.ts || 0) - (b.ts || 0)).map(n => '<p style="margin:0 0 4px"><b>' + fmtDate(n.ts) + "</b> " + esc(n.texto || "") + (n.por ? ' <span style="color:#555">(' + esc(n.por) + ")</span>" : "") + "</p>").join("") + "</div>" : "") +
     '<div class="po-sign"><div>_____________________<br>Responsable de taller</div><div>_____________________<br>Recibí conforme</div></div>' +
     '<div class="po-gen">Generado: ' + fmtDateTime(Date.now()) + " · " + esc(co.app || "Bitácora de Camiones") + "</div>";
   document.body.appendChild(pa);

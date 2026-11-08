@@ -204,6 +204,8 @@ a{color:var(--accent)}
 .row .t{font-weight:600;font-size:.96rem;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .row .m{color:var(--muted);font-size:.82rem;margin-top:3px;display:flex;gap:10px;flex-wrap:wrap}
 .row .m span{display:inline-flex;align-items:center;gap:4px}
+.row .del{flex:none;width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;align-self:center;border-radius:9px;border:1px solid var(--line-strong);background:var(--surface-2);color:var(--crit);cursor:pointer}
+.row .del svg{width:16px;height:16px}
 .sev-stripe{width:4px;align-self:stretch;border-radius:3px;flex:none}
 .sev-alta{background:var(--crit)} .sev-media{background:var(--warn)} .sev-baja{background:var(--muted)}
 
