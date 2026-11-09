@@ -53,17 +53,20 @@ async function list(view, ctx) {
   const fallas = deriveFallas(cks, bits, orders, resolved);
   const refs = { orders, fuel, fallas };
   const manage = can(ctx.profile, "truck.manage");
+  const carroDe = id => carros.find(c => (c.camionId || "") === id);
   const rows = trucks.length ? trucks.map(t => {
     const av = truckAvailability(t, refs, Date.now());
     const ap = availPill(av.k);
     const w = worstDoc(t);
     const nF = fallas.filter(f => f.truckId === t.id).length;
+    const cr = carroDe(t.id);
     return '<div class="row" data-truck="' + t.id + '" style="cursor:pointer"><span class="trucknum">' + esc(t.num) + "</span>" +
       '<div class="rl"><div class="t">' + esc(t.marca + " " + (t.modelo || "")) + ' <span class="plate" style="font-size:.78rem;padding:2px 7px">' + esc(t.patente) + "</span></div>" +
       '<div class="m"><span>' + (t.anio ? "Año " + t.anio : "") + "</span>" +
       '<span class="' + (w.cls === "ok" ? "" : "") + '" style="color:' + (w.cls === "ok" ? "var(--muted)" : "var(--crit)") + '">' + esc(w.label) + "</span>" +
       (nF ? '<span style="color:var(--crit)">' + nF + " falla" + (nF > 1 ? "s" : "") + " por gestionar</span>" : "") +
-      (t.activo === false ? '<span style="color:var(--muted)">Inactivo</span>' : "") + "</div></div>" +
+      (t.activo === false ? '<span style="color:var(--muted)">Inactivo</span>' : "") +
+      (cr ? '<span style="flex-basis:100%;color:var(--accent)">' + iconSpan("truck") + "Carro " + esc(cr.num || cr.patente) + "</span>" : "") + "</div></div>" +
       '<span class="pill ' + ap.cls + '"><span class="dot"></span>' + ap.label + "</span></div>";
   }).join("") : emptyBox("No hay camiones registrados");
 

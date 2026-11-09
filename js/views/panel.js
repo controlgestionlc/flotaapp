@@ -134,12 +134,15 @@ async function dashboard(view, ctx) {
     kpi("a", fmtCLP(mesTotal), "Costo del mes", "taller completado", "costo") +
     "</div>";
 
-  const availRows = avail.map(({ t, a }) =>
-    '<div class="row" data-avail="' + t.id + '" style="cursor:pointer"><span class="trucknum">' + esc(t.num) + "</span>" +
+  const carroDe = id => carros.find(c => (c.camionId || "") === id);
+  const availRows = avail.map(({ t, a }) => {
+    const cr = carroDe(t.id);
+    return '<div class="row" data-avail="' + t.id + '" style="cursor:pointer"><span class="trucknum">' + esc(t.num) + "</span>" +
     '<div class="rl"><div class="t">' + esc(t.marca + " " + (t.modelo || "")) + "</div>" +
-    '<div class="m"><span>' + esc(t.patente) + "</span>" + (a.order && a.order.otNumero ? "<span>" + esc(a.order.otNumero) + "</span>" : "") + "</div></div>" +
-    '<span class="pill ' + a.cls + '"><span class="dot"></span>' + a.label + "</span></div>"
-  ).join("");
+    '<div class="m"><span>' + esc(t.patente) + "</span>" + (a.order && a.order.otNumero ? "<span>" + esc(a.order.otNumero) + "</span>" : "") +
+    (cr ? '<span style="flex-basis:100%;color:var(--accent)">' + iconSpan("truck") + "Carro " + esc(cr.num || cr.patente) + "</span>" : "") + "</div></div>" +
+    '<span class="pill ' + a.cls + '"><span class="dot"></span>' + a.label + "</span></div>";
+  }).join("");
   const legend = '<div class="meta-line" style="display:flex;gap:12px;flex-wrap:wrap;margin:0 2px 10px;font-size:.82rem">' +
     '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:9px;height:9px;border-radius:50%;background:var(--ok)"></span>' + nOp + " operativos</span>" +
     '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:9px;height:9px;border-radius:50%;background:var(--warn)"></span>' + nObs + " observación</span>" +
