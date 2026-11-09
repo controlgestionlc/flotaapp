@@ -1,0 +1,92 @@
+import { store } from "../store.js";
+import { I, esc, toast, $ } from "../ui.js";
+
+export async function renderEmpresa(view, ctx) {
+  const co = await store.getCompany();
+  const draft = {
+    nombre: co.nombre || "", app: co.app || "", logo: co.logo || "", avisoDias: co.avisoDias || 30,
+    rut: co.rut || "", giro: co.giro || "", direccion: co.direccion || "", comuna: co.comuna || "", fono: co.fono || "", email: co.email || ""
+  };
+
+  function paint() {
+    view.innerHTML =
+      '<button class="backlink" id="em-back">' + I.back + " Panel</button>" +
+      '<div class="subhead"><h2>Datos de la empresa</h2></div>' +
+      '<div class="card pad section">' +
+        '<div style="display:flex;align-items:center;gap:14px;margin-bottom:18px">' +
+          '<div style="width:64px;height:64px;border-radius:14px;background:var(--surface-2);border:1px solid var(--line-strong);overflow:hidden;display:grid;place-items:center;flex:none">' +
+            (draft.logo ? '<img src="' + esc(draft.logo) + '" style="width:100%;height:100%;object-fit:cover">' : '<span class="meta-line" style="font-size:.68rem;text-align:center">Sin<br>logo</span>') +
+          "</div>" +
+          '<div style="flex:1"><input type="file" id="em-file" accept="image/*" style="display:none">' +
+            '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm btn-soft" id="em-upload">' + I.plus + "Subir logo</button>" +
+            (draft.logo ? '<button class="btn sm btn-soft" id="em-remove" style="color:var(--crit)">Quitar</button>' : "") + "</div>" +
+            '<div class="meta-line" style="font-size:.76rem;margin-top:6px">Se guarda reducido (máx 240 px).</div>' +
+          "</div>" +
+        "</div>" +
+        '<label class="fld"><span class="lb">Nombre / Razón social</span><input class="input" id="em-nombre" value="' + esc(draft.nombre) + '"></label>' +
+        '<div class="grid2"><label class="fld"><span class="lb">RUT</span><input class="input" id="em-rut" placeholder="76.123.456-7" value="' + esc(draft.rut) + '"></label>' +
+        '<label class="fld"><span class="lb">Giro</span><input class="input" id="em-giro" placeholder="Transporte de carga" value="' + esc(draft.giro) + '"></label></div>' +
+        '<label class="fld"><span class="lb">Dirección</span><input class="input" id="em-dir" placeholder="Calle y número" value="' + esc(draft.direccion) + '"></label>' +
+        '<div class="grid2"><label class="fld"><span class="lb">Comuna / Ciudad</span><input class="input" id="em-comuna" placeholder="Angol" value="' + esc(draft.comuna) + '"></label>' +
+        '<label class="fld"><span class="lb">Teléfono</span><input class="input" id="em-fono" placeholder="+56 9 ..." value="' + esc(draft.fono) + '"></label></div>' +
+        '<label class="fld"><span class="lb">Correo</span><input class="input" id="em-email" type="email" placeholder="contacto@empresa.cl" value="' + esc(draft.email) + '"></label>' +
+        '<label class="fld"><span class="lb">Nombre de la app</span><input class="input" id="em-app" value="' + esc(draft.app) + '"></label>' +
+        '<label class="fld" style="margin-bottom:0"><span class="lb">Avisar documentos por vencer con (días de antelación)</span><input class="input num" id="em-aviso" inputmode="numeric" placeholder="30" value="' + esc(draft.avisoDias) + '"></label>' +
+      "</div>" +
+      '<div class="formbar"><button class="btn btn-primary" id="em-save">' + I.check + "Guardar</button></div>";
+
+    $("#em-back", view).onclick = () => ctx.go("home", {});
+    $("#em-nombre", view).oninput = e => { draft.nombre = e.target.value; };
+    $("#em-app", view).oninput = e => { draft.app = e.target.value; };
+    $("#em-aviso", view).oninput = e => { draft.avisoDias = e.target.value; };
+    $("#em-rut", view).oninput = e => { draft.rut = e.target.value; };
+    $("#em-giro", view).oninput = e => { draft.giro = e.target.value; };
+    $("#em-dir", view).oninput = e => { draft.direccion = e.target.value; };
+    $("#em-comuna", view).oninput = e => { draft.comuna = e.target.value; };
+    $("#em-fono", view).oninput = e => { draft.fono = e.target.value; };
+    $("#em-email", view).oninput = e => { draft.email = e.target.value; };
+    $("#em-upload", view).onclick = () => $("#em-file", view).click();
+    $("#em-file", view).onchange = e => {
+      const f = e.target.files && e.target.files[0];
+      if (f) resizeImage(f, 240, url => { draft.logo = url; paint(); });
+    };
+    const rm = $("#em-remove", view); if (rm) rm.onclick = () => { draft.logo = ""; paint(); };
+    $("#em-save", view).onclick = async () => {
+      if (!draft.nombre.trim() || !draft.app.trim()) { toast("Completa el nombre de la empresa y de la app", "err"); return; }
+      const btn = $("#em-save", view); btn.disabled = true; btn.textContent = "Guardando...";
+      try {
+        await store.saveCompany({
+          nombre: draft.nombre.trim(), app: draft.app.trim(), logo: draft.logo || "", avisoDias: Math.max(1, Number(draft.avisoDias) || 30),
+          rut: draft.rut.trim(), giro: draft.giro.trim(), direccion: draft.direccion.trim(), comuna: draft.comuna.trim(), fono: draft.fono.trim(), email: draft.email.trim()
+        });
+        await ctx.reloadCompany();
+        toast("Datos de empresa guardados", "ok");
+        ctx.go("home", {});
+      } catch (err) { toast("No se pudo guardar: " + (err.message || err), "err"); btn.disabled = false; btn.textContent = "Guardar"; }
+    };
+  }
+  paint();
+}
+
+// Redimensiona la imagen a un data URL pequeño (para guardar en Firestore sin Storage).
+function resizeImage(file, max, cb) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      if (w > h && w > max) { h = Math.round(h * max / w); w = max; }
+      else if (h >= w && h > max) { w = Math.round(w * max / h); h = max; }
+      const c = document.createElement("canvas"); c.width = w; c.height = h;
+      c.getContext("2d").drawImage(img, 0, 0, w, h);
+      let out;
+      try { out = c.toDataURL("image/webp", 0.85); if (!out || out.indexOf("data:image/webp") !== 0) out = c.toDataURL("image/png"); }
+      catch (e) { out = c.toDataURL("image/png"); }
+      cb(out);
+    };
+    img.onerror = () => toast("No se pudo leer la imagen", "err");
+    img.src = reader.result;
+  };
+  reader.onerror = () => toast("No se pudo leer el archivo", "err");
+  reader.readAsDataURL(file);
+}

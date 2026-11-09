@@ -23,14 +23,13 @@ Construida con **HTML + JavaScript modular (ES modules) + Firebase** (Authentica
 
 ## Modo demostración (sin Firebase)
 
-Mientras `public/js/config.js` tenga los valores de ejemplo, la app corre en **modo demo**: guarda todo en el `localStorage` del navegador con datos de ejemplo, para probarla sin configurar nada.
+Mientras `js/config.js` tenga los valores de ejemplo, la app corre en **modo demo**: guarda todo en el `localStorage` del navegador con datos de ejemplo, para probarla sin configurar nada.
 
 Para probar localmente:
 
 ```bash
-cd public
 python3 -m http.server 8080
-# abre http://localhost:8080
+# abre http://localhost:8080 (ejecútalo en la raíz del proyecto)
 ```
 
 > Usa un servidor local (no `file://`) porque la app carga módulos ES.
@@ -47,7 +46,7 @@ Usuarios de prueba (botones en la pantalla de login):
 
 ## Roles y permisos
 
-Los roles y permisos están en `public/js/permissions.js`. La matriz es **extensible**: para sumar un permiso nuevo lo defines en `PERMISSIONS` y lo agregas a los roles que lo tengan. La interfaz consulta `can(user, permiso)` y las reglas de Firestore validan lo mismo por rol.
+Los roles y permisos están en `js/permissions.js`. La matriz es **extensible**: para sumar un permiso nuevo lo defines en `PERMISSIONS` y lo agregas a los roles que lo tengan. La interfaz consulta `can(user, permiso)` y las reglas de Firestore validan lo mismo por rol.
 
 Además del rol, cada usuario puede tener **permisos propios** (campo `perms` en su documento): si están definidos, mandan sobre los del rol. Se configuran en la pantalla Usuarios (Editar usuario → "Personalizar permisos").
 
@@ -102,7 +101,7 @@ Los documentos se registran por **número y fecha de vencimiento** (sin archivos
 
 ## PWA y versiones
 
-- `public/manifest.webmanifest` y `public/sw.js` hacen la app instalable y la mantienen disponible offline (cache-first para recursos propios).
+- `manifest.webmanifest` y `sw.js` hacen la app instalable y la mantienen disponible offline (cache-first para recursos propios).
 - Al publicar: sube `APP_VERSION` en `sw.js` y el mismo número en `window.BF_VERSION` dentro de `index.html`. Con eso, al abrir la app aparece el botón "Actualizar".
 
 ## Conectar tu proyecto de Firebase
@@ -110,7 +109,7 @@ Los documentos se registran por **número y fecha de vencimiento** (sin archivos
 1. Crea un proyecto en [Firebase Console](https://console.firebase.google.com/).
 2. **Authentication → Sign-in method:** habilita **Correo/contraseña**.
 3. **Firestore Database:** créalo en modo producción.
-4. **Configuración del proyecto → Tus apps → Web:** copia el objeto de configuración y pégalo en `public/js/config.js` (reemplaza los `TU_...`). Con eso la app deja el modo demo y usa Firebase.
+4. **Configuración del proyecto → Tus apps → Web:** copia el objeto de configuración y pégalo en `js/config.js` (reemplaza los `TU_...`). Con eso la app deja el modo demo y usa Firebase.
 5. Instala las herramientas y despliega (incluye siempre las reglas):
 
 ```bash
@@ -138,42 +137,46 @@ Desde ahí, ese administrador crea el resto de los usuarios desde la propia app 
 
 ## Estructura del proyecto
 
+La app se sirve desde la raíz del repositorio (GitHub Pages). Los recursos estáticos y la configuración de Firebase están en la raíz; el código JavaScript vive en `js/` (núcleo) y `js/views/` (pantallas).
+
 ```
-bitacora-flota/
-├── firebase.json            Hosting + Firestore
-├── firestore.rules          Reglas de seguridad por rol
+flotaapp/
+├── index.html              Meta PWA + registro del service worker + versión
+├── manifest.webmanifest
+├── sw.js                   Service worker (offline + versión)
+├── styles.css
+├── icon-192/512/maskable.png
+├── firebase.json           Hosting + Firestore
+├── firestore.rules         Reglas de seguridad por rol
 ├── firestore.indexes.json
-├── .firebaserc.example
-└── public/
-    ├── index.html           Meta PWA + registro del service worker + versión
-    ├── manifest.webmanifest
-    ├── sw.js                Service worker (offline + versión)
-    ├── icon-192/512/maskable.png
-    ├── styles.css
-    └── js/
-        ├── config.js        Configuración de Firebase (editar aquí)
-        ├── main.js          Arranque, sesión, menú lateral y router
-        ├── store.js         Datos: adaptador Firebase + adaptador demo
-        ├── permissions.js   Roles, matriz de permisos y permisos por usuario
-        ├── planning.js      Motor de planificación, disponibilidad y reservas
-        ├── clima.js         Clima e historial (Open-Meteo)
-        ├── maintenance.js   Alertas de mantención por kilometraje
-        ├── checklist.js     Puntos del checklist y tipos de documento
-        ├── ui.js            Utilidades de interfaz (sheets, drawer, iconos)
-        ├── productos-base.js / xlsx-lite.js
-        └── views/
-            ├── login.js
-            ├── conductor.js     Selección de camión, checklist, viajes, bitácora, combustible
-            ├── panel.js         Panel + órdenes de taller (detalle e impresión)
-            ├── planificacion.js Semana, operación del día, plan vs real, faenas, clima, historial, recepción, auto
-            ├── camiones.js      Registro de camiones, documentos y estado operativo
-            ├── resumen.js       Resumen operativo por camión
-            ├── reportes.js      Indicadores y exportación
-            ├── truckweek.js     Semana del camión
-            ├── usuarios.js      Usuarios y permisos
-            ├── empresa.js       Datos de la empresa
-            ├── productos.js / importar.js / mantencion.js / alertas.js
+├── firebaserc.example
+└── js/
+    ├── config.js           Configuración de Firebase (editar aquí)
+    ├── main.js             Arranque, sesión, menú lateral y router
+    ├── store.js            Datos: adaptador Firebase + adaptador demo
+    ├── permissions.js      Roles, matriz de permisos y permisos por usuario
+    ├── planning.js         Motor de planificación, disponibilidad y reservas
+    ├── clima.js            Clima e historial (Open-Meteo)
+    ├── maintenance.js      Alertas de mantención por kilometraje
+    ├── checklist.js        Puntos del checklist y tipos de documento
+    ├── ui.js               Utilidades de interfaz (sheets, drawer, iconos)
+    ├── productos-base.js / xlsx-lite.js
+    └── views/
+        ├── login.js
+        ├── conductor.js       Selección de camión, checklist, viajes, bitácora, combustible
+        ├── panel.js           Panel + órdenes de taller (detalle, movimientos e impresión)
+        ├── planificacion.js   Semana, operación del día, plan vs real, faenas, clima, historial, recepción, auto
+        ├── camiones.js        Camiones y carros: registro, documentos, estado, órdenes y fallas
+        ├── choferes.js        Registro de choferes y asignación a camiones
+        ├── resumen.js         Resumen operativo por camión
+        ├── reportes.js        Indicadores y exportación
+        ├── truckweek.js       Semana del camión
+        ├── usuarios.js        Usuarios y permisos
+        ├── empresa.js         Datos de la empresa
+        ├── productos.js / importar.js / mantencion.js / alertas.js
 ```
+
+> Nota: la app se sirve desde la raíz (no hay carpeta `public/`). Las rutas de importación son relativas: el núcleo en `js/` se importa entre sí con `./`, y las vistas en `js/views/` importan el núcleo con `../` y entre ellas con `./`.
 
 ## Pendientes / próximas fases
 
