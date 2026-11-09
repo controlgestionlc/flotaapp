@@ -353,6 +353,14 @@ export const store = {
     return A.add("trucks", data);
   },
 
+  // --- choferes (registro, no requiere cuenta de usuario) ---
+  async listChoferes() { return (await A.list("choferes")).sort((a, b) => ((a.nombre || "") + " " + (a.apellidos || "")).localeCompare((b.nombre || "") + " " + (b.apellidos || ""))); },
+  async getChofer(id) { return A.get("choferes", id); },
+  async saveChofer(id, data) {
+    if (id) { await A.set("choferes", id, data); return id; }
+    return A.add("choferes", data);
+  },
+
   // --- checklists / bitácora / órdenes ---
   async listChecklists() { return (await A.list("checklists")).sort((a,b)=> b.ts-a.ts); },
   async addChecklist(data) { return A.add("checklists", data); },

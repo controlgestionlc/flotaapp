@@ -54,6 +54,12 @@ service cloud.firestore {
       allow create, update, delete: if hasRole(['supervisor','administrador']);
     }
 
+    // Registro de choferes (no requiere cuenta de usuario)
+    match /choferes/{id} {
+      allow read: if isActive();
+      allow create, update, delete: if hasRole(['supervisor','administrador']);
+    }
+
     // Checklists de turno
     match /checklists/{id} {
       // Cualquier usuario activo puede leer el historial del camión.

@@ -8,6 +8,7 @@ import { renderLogin } from "./login.js";
 import { renderConductor } from "./conductor.js";
 import { renderPanel } from "./panel.js";
 import { renderCamiones } from "./camiones.js";
+import { renderChoferes } from "./choferes.js";
 import { renderUsuarios } from "./usuarios.js";
 import { renderReportes } from "./reportes.js";
 import { renderEmpresa } from "./empresa.js";
@@ -59,6 +60,7 @@ function appbar(sub, showExit) {
 // Menú lateral izquierdo: navegación de la app (incluye "Panel").
 function menuItems(p) {
   const items = [{ r: "home", l: "Panel", ic: I.grid }, { r: "camiones", l: "Camiones", ic: I.truck }];
+  if (can(p, "truck.manage")) items.push({ r: "choferes", l: "Choferes", ic: I.users });
   if (can(p, "plan.view")) items.push({ r: "planificacion", l: "Planificación", ic: I.route });
   if (can(p, "plan.view")) items.push({ r: "climahist", l: "Historial de clima", ic: I.alert });
   if (can(p, "reserva.manage")) items.push({ r: "recepcion", l: "Recepción en planta", ic: I.pin });
@@ -69,7 +71,7 @@ function menuItems(p) {
   if (can(p, "data.import")) items.push({ r: "importar", l: "Importar", ic: I.upload });
   return items;
 }
-const HOME_ROUTES = { home: 1, camiones: 1, truckForm: 1, truckDetail: 1, carroForm: 1, carroDetail: 1, mantencion: 1, resumen: 1 };
+const HOME_ROUTES = { home: 1, camiones: 1, truckForm: 1, truckDetail: 1, carroForm: 1, carroDetail: 1, choferes: 1, choferForm: 1, choferDetail: 1, mantencion: 1, resumen: 1 };
 function openMenu() {
   const p = ctx.profile; if (!p) return;
   const cur = ctx.route;
@@ -120,6 +122,10 @@ async function routeTo(view) {
   const p = ctx.profile, r = ctx.route;
   if (p.role === "conductor") return renderConductor(view, ctx);
   if (r === "camiones" || r === "truckForm" || r === "truckDetail" || r === "carroForm" || r === "carroDetail") return renderCamiones(view, ctx);
+  if (r === "choferes" || r === "choferForm" || r === "choferDetail") {
+    if (!can(p, "truck.manage")) { ctx.route = "home"; return renderPanel(view, ctx); }
+    return renderChoferes(view, ctx);
+  }
   if (r === "mantencion") {
     if (!can(p, "truck.manage")) { ctx.route = "home"; return renderPanel(view, ctx); }
     return renderMantencion(view, ctx);

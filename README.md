@@ -4,7 +4,7 @@ App web móvil (PWA) para gestionar la mantención preventiva y correctiva, y la
 
 Construida con **HTML + JavaScript modular (ES modules) + Firebase** (Authentication + Firestore), sin paso de build. Se abre directamente en el navegador, es instalable como app (PWA) y se despliega en Firebase Hosting o GitHub Pages.
 
-**Versión actual: 1.4.0**
+**Versión actual: 1.4.1**
 
 ## Novedades recientes (resumen)
 
@@ -14,6 +14,7 @@ Construida con **HTML + JavaScript modular (ES modules) + Firebase** (Authentica
 - **Clima por faena (Open-Meteo, sin API key):** pronóstico de 7 días con lluvia y temperatura máx/mín como señal de riesgo (el encargado confirma, nunca cierra faenas solo). **Historial de clima** por faena y por día desde el 1 de agosto de 2026, con actualización automática diaria e impresión.
 - **Recepción en planta (perfil Secretaria):** reserva de horario de recepción, planta de destino y guía de despacho por cada viaje (vuelta). Aparece un check en la planificación diaria y semanal cuando el día queda completo. Si el chofer ingresa una guía distinta a la reservada, se marca en rojo.
 - **Carros (remolques):** en el módulo Camiones hay una sección aparte para registrar carros, con patente y documentos igual que un camión. Cada carro se asocia a un solo camión (editable, con enroque automático: si el camión elegido ya tiene un carro, se intercambian). El carro tiene su propia gestión de fallas (reportadas por el supervisor o por el chofer del camión asociado) y sus propias órdenes de taller, con el mismo tratamiento que un camión. Los carros no aparecen en el tablero de disponibilidad ni en la planificación, porque no se conducen solos; su estado es independiente del camión.
+- **Registro de choferes:** módulo "Choferes" (menú lateral) para registrar choferes sin necesidad de crear una cuenta. Cada ficha tiene nombre y apellidos, flags de documentos al día (licencia de conductor, cédula de identidad, certificado de antecedentes y otros), vínculo opcional con un usuario y asignación a un camión. Al asignar un chofer a un camión se refleja en el camión (nombre del conductor y, si el chofer está vinculado a un usuario, su `conductorUid` para que pueda iniciar sesión). Un chofer va con un solo camión; si el camión ya tenía otro, ese queda sin asignar.
 - **Asignación de chofer por camión:** el conductor solo puede seleccionar su camión asignado (ve el estado de los demás) y puede tomar uno de reserva si el suyo está en taller.
 - **Documento vencido = fuera de servicio automático:** si un camión tiene cualquier documento vencido (permiso de circulación, SOAP, revisión técnica u otros), queda automáticamente fuera de servicio: aparece en rojo en el panel, no es seleccionable por el conductor y no entra en la asignación de la planificación hasta regularizar el documento.
 - **Gestionar novedad:** al tocar una falla reportada en Disponibilidad se elige entre crear la orden de taller o descartarla indicando el motivo.
