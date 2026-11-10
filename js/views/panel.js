@@ -528,6 +528,7 @@ async function orderDetail(view, ctx) {
     '<div class="m">' + (m.docto ? "<span>Doc " + esc(m.docto) + "</span>" : "") + (m.proveedor ? "<span>" + esc(m.proveedor) + "</span>" : "") + (m.fecha ? "<span>" + fmtDate(m.fecha) + "</span>" : "") +
     "<span>" + nfCant(m.cantidad) + " × " + fmtCLP(m.precioUnit) + "</span></div></div>" +
     '<b class="num">' + fmtCLP(m.total) + "</b>" +
+    (m.docto ? '<button class="del" data-printmov="' + i + '" title="Imprimir factura" style="color:var(--accent)">' + I.doc + "</button>" : "") +
     (canEdit ? '<button class="del" data-delmov="' + i + '">' + I.x + "</button>" : "") + "</div>").join("");
   // Repuestos registrados con el formato anterior (solo historial, no editable).
   const legacyRows = d.repuestos.map(r =>
@@ -578,7 +579,6 @@ async function orderDetail(view, ctx) {
     (o.detalle ? '<p style="margin:12px 0 0;font-size:.9rem;color:var(--ink-2)">' + esc(o.detalle) + "</p>" : "") +
     '<div class="meta-line" style="margin-top:8px;font-size:.8rem">Reportado por ' + esc(o.reportadoPor || "chofer") + " · " + fmtDateTime(o.createdAt) + "</div></div>" +
     '<button class="btn btn-soft section" id="o-print">' + I.doc + "Imprimir orden / Guardar PDF</button>" +
-    '<button class="btn btn-soft" style="margin-top:10px" id="o-print-fact">' + I.doc + "PDF de facturas (Tesorería)</button>" +
     descBanner +
     resumenCard +
     '<div class="card pad section"><label class="fld"><span class="lb">Estado</span><div class="chips">' + estChips + "</div></label>" +
@@ -604,7 +604,6 @@ async function orderDetail(view, ctx) {
   };
   $("#o-back", view).onclick = backFromOrder;
   const bpr = $("#o-print", view); if (bpr) bpr.onclick = () => printOrden(o, t);
-  const bpf = $("#o-print-fact", view); if (bpf) bpf.onclick = () => printFacturas(o, t);
   if (!editable || esDesc) return;
   const bd = $("#o-descartar", view); if (bd) bd.onclick = () => descartarOrden(ctx, o);
   $$("[data-est]", view).forEach(b => b.onclick = () => { syncOrder(view); d.estado = b.getAttribute("data-est"); orderDetail(view, ctx); });
@@ -633,7 +632,8 @@ async function orderDetail(view, ctx) {
   const entrega = $("#o-entrega", view); if (entrega) entrega.onchange = () => { d.entrega = entrega.value; };
   // Bitácora de compras/fletes/servicios.
   const amv = $("#o-addmov", view); if (amv) amv.onclick = () => { syncOrder(view); movForm(ctx, view, o, d, null); };
-  $$("[data-mov]", view).forEach(r => r.onclick = (ev) => { if (ev.target.closest("[data-delmov]")) return; syncOrder(view); movForm(ctx, view, o, d, +r.getAttribute("data-mov")); });
+  $$("[data-mov]", view).forEach(r => r.onclick = (ev) => { if (ev.target.closest("[data-delmov]") || ev.target.closest("[data-printmov]")) return; syncOrder(view); movForm(ctx, view, o, d, +r.getAttribute("data-mov")); });
+  $$("[data-printmov]", view).forEach(b => b.onclick = (ev) => { ev.stopPropagation(); printFactura(o, t, d.movimientos[+b.getAttribute("data-printmov")]); });
   $$("[data-delmov]", view).forEach(b => b.onclick = async (ev) => {
     ev.stopPropagation(); syncOrder(view); d.movimientos.splice(+b.getAttribute("data-delmov"), 1);
     try { await persistOrderDraft(o, d); toast("Registro eliminado", "ok"); orderDetail(view, ctx); }
@@ -656,7 +656,7 @@ function buildOrderPatch(o, d) {
   const movimientos = (d.movimientos || []).map(m => ({
     id: m.id || ("mv_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)),
     tipo: m.tipo || "otro", docto: (m.docto || "").trim(), fecha: m.fecha || null,
-    proveedor: (m.proveedor || "").trim(), descripcion: (m.descripcion || "").trim(),
+    proveedor: (m.proveedor || "").trim(), descripcion: (m.descripcion || "").trim(), detalle: (m.detalle || "").trim(),
     precioUnit: Math.round(Number(m.precioUnit) || 0), cantidad: Number(m.cantidad) || 0,
     total: Math.round((Number(m.precioUnit) || 0) * (Number(m.cantidad) || 0))
   }));
@@ -685,7 +685,7 @@ function movForm(ctx, view, o, d, idx) {
   const st = {
     tipo: src.tipo || "repuesto", docto: src.docto || "",
     fecha: src.fecha ? dInput(src.fecha) : dInput(Date.now()),
-    proveedor: src.proveedor || "", descripcion: src.descripcion || "",
+    proveedor: src.proveedor || "", descripcion: src.descripcion || "", detalle: src.detalle || "",
     precioUnit: soloNum(src.precioUnit), cantidad: src.cantidad != null && src.cantidad !== "" ? nfCant(src.cantidad) : "1"
   };
   const tipoChips = MOV_TIPOS.map(x => '<button class="chip' + (st.tipo === x[0] ? " on" : "") + '" data-mt="' + x[0] + '">' + x[1] + "</button>").join("");
@@ -695,7 +695,8 @@ function movForm(ctx, view, o, d, idx) {
     '<label class="fld"><span class="lb">N° de documento</span><input class="input" id="mv-docto" placeholder="N° factura / boleta / guía" value="' + esc(st.docto) + '"></label>' +
     '<label class="fld"><span class="lb">Fecha</span><input class="input" type="date" id="mv-fecha" value="' + esc(st.fecha) + '"></label>' +
     '<label class="fld"><span class="lb">Proveedor</span><input class="input" id="mv-prov" placeholder="Nombre del proveedor" value="' + esc(st.proveedor) + '"></label>' +
-    '<label class="fld"><span class="lb">Descripción</span><input class="input" id="mv-desc" placeholder="Detalle del repuesto / servicio" value="' + esc(st.descripcion) + '"></label>' +
+    '<label class="fld"><span class="lb">Descripción (nombre corto)</span><input class="input" id="mv-desc" placeholder="Ej: Kit de embrague / Rectificación" value="' + esc(st.descripcion) + '"></label>' +
+    '<label class="fld"><span class="lb">Detalle de lo comprado / servicio realizado</span><textarea class="input" id="mv-detalle" placeholder="Qué se compró o qué trabajo se hizo según este documento...">' + esc(st.detalle) + "</textarea></label>" +
     '<div class="rep-row" style="gap:10px">' +
     '<label class="fld" style="flex:1;margin:0"><span class="lb">Precio unitario</span><input class="input num" id="mv-precio" inputmode="numeric" placeholder="$" value="' + esc(miles(st.precioUnit)) + '"></label>' +
     '<label class="fld" style="width:96px;margin:0"><span class="lb">Cantidad</span><input class="input num" id="mv-cant" inputmode="decimal" placeholder="1" value="' + esc(st.cantidad) + '"></label></div>' +
@@ -716,7 +717,7 @@ function movForm(ctx, view, o, d, idx) {
           id: (idx != null && d.movimientos[idx] && d.movimientos[idx].id) ? d.movimientos[idx].id : ("mv_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)),
           tipo: st.tipo, docto: ($("#mv-docto").value || "").trim(),
           fecha: fv ? new Date(fv + "T12:00:00").getTime() : null,
-          proveedor: ($("#mv-prov").value || "").trim(), descripcion,
+          proveedor: ($("#mv-prov").value || "").trim(), descripcion, detalle: ($("#mv-detalle").value || "").trim(),
           precioUnit: Math.round(precioUnit), cantidad, total: Math.round(precioUnit * cantidad)
         };
         if (idx != null) d.movimientos[idx] = mov; else d.movimientos.push(mov);
@@ -804,24 +805,19 @@ async function printOrden(o, t) {
   setTimeout(() => { try { window.print(); } catch (e) {} setTimeout(cleanup, 2000); }, 80);
 }
 
-// PDF para Tesorería: detalle de los ítems de la orden que tienen una factura
-// (o documento) asociada, para respaldar el pago de las facturas de cada falla.
-async function printFacturas(o, t) {
-  const facturas = (o.movimientos || []).filter(m => (m.docto || "").trim());
-  if (!facturas.length) { toast("Esta orden no tiene facturas registradas (agrega compras/servicios con N° de documento)", "err"); return; }
+// PDF por factura: reporte de UN documento (una factura/boleta/guía) con el
+// detalle de lo comprado o del servicio realizado, para el pago por Tesorería.
+async function printFactura(o, t, m) {
+  if (!m) return;
+  if (!(m.docto || "").trim()) { toast("Este registro no tiene N° de documento", "err"); return; }
   let co = {}; try { co = await store.getCompany(); } catch (e) { co = {}; }
   const old = document.getElementById("print-area"); if (old) old.remove();
-  const totalPagar = facturas.reduce((s, m) => s + (Number(m.total) || 0), 0);
-  const rows = facturas.slice().sort((a, b) => (a.fecha || 0) - (b.fecha || 0)).map(m =>
-    '<tr><td><b>' + esc(m.docto) + "</b></td><td>" + (m.fecha ? fmtDate(m.fecha) : "—") + "</td><td>" + esc(m.proveedor || "—") + "</td>" +
-    "<td>" + esc(movLabel(m.tipo)) + (m.descripcion ? ": " + esc(m.descripcion) : "") +
-    '<br><span style="color:#555">' + nfCant(m.cantidad) + " × " + fmtCLP(m.precioUnit) + "</span></td>" +
-    '<td class="r">' + fmtCLP(m.total) + "</td></tr>").join("");
   const est = EST[o.estado] || { l: "" };
   const coLine = [co.giro, co.rut ? "RUT " + co.rut : ""].filter(Boolean).join(" · ");
   const coAddr = [co.direccion, co.comuna].filter(Boolean).join(", ");
   const coContact = [co.fono ? "Tel: " + co.fono : "", co.email].filter(Boolean).join(" · ");
   const field = (k, v) => '<div class="po-f"><span>' + esc(k) + "</span><b>" + esc(v || "—") + "</b></div>";
+  const esServicio = m.tipo === "servicio" || m.tipo === "manoobra";
   const pa = document.createElement("div");
   pa.id = "print-area";
   pa.innerHTML =
@@ -830,27 +826,30 @@ async function printFacturas(o, t) {
         (coLine ? "<div>" + esc(coLine) + "</div>" : "") +
         (coAddr ? "<div>" + esc(coAddr) + "</div>" : "") +
         (coContact ? "<div>" + esc(coContact) + "</div>" : "") + "</div>" +
-      '<div class="po-doc"><div class="po-doc-t">FACTURAS A PAGO</div>' +
-        (o.otNumero ? '<div class="po-ot">' + esc(o.otNumero) + "</div>" : "") +
-        '<div class="po-est">' + esc(est.l) + "</div></div>" +
+      '<div class="po-doc"><div class="po-doc-t">FACTURA A PAGO</div>' +
+        '<div class="po-ot">' + esc(m.docto) + "</div>" +
+        '<div class="po-est">' + esc(movLabel(m.tipo)) + "</div></div>" +
     "</div>" +
     '<div class="po-grid">' +
+      field("Proveedor", m.proveedor) +
+      field("N° documento", m.docto) +
+      field("Fecha documento", m.fecha ? fmtDate(m.fecha) : "") +
+      field("Tipo", movLabel(m.tipo)) +
       field("Camión", t.num + (t.marca ? " · " + t.marca + " " + (t.modelo || "") : "")) +
       field("Patente", t.patente) +
       field("Orden de taller", o.otNumero || "") +
-      field("Fecha de emisión", fmtDate(Date.now())) +
       field("Taller", o.taller) +
-      field("Reportado por", o.reportadoPor || "") +
     "</div>" +
-    '<div class="po-sec"><h2>Falla / motivo</h2><p>' + esc(o.titulo || "") + (o.detalle ? "<br>" + esc(o.detalle) : "") + "</p></div>" +
-    '<div class="po-sec"><h2>Facturas asociadas a esta falla</h2>' +
-      '<table class="po-table"><thead><tr><th>N° documento</th><th>Fecha</th><th>Proveedor</th><th>Detalle</th><th class="r">Monto</th></tr></thead><tbody>' +
-      rows +
-      '<tr class="po-tot"><td class="r" colspan="4">TOTAL A PAGAR</td><td class="r">' + fmtCLP(totalPagar) + "</td></tr>" +
-      "</tbody></table>" +
-      '<p style="margin:8px 0 0;font-size:11px;color:#555">Este reporte detalla únicamente los ítems con factura o documento asociado, para respaldar el pago por Tesorería. El costo total de la orden puede incluir además mano de obra u otros gastos sin documento.</p></div>' +
+    '<div class="po-sec"><h2>Falla / motivo de la orden</h2><p>' + esc(o.titulo || "") + (o.detalle ? "<br>" + esc(o.detalle) : "") + "</p></div>" +
+    '<div class="po-sec"><h2>' + (esServicio ? "Detalle del servicio realizado" : "Detalle de lo comprado") + "</h2><p>" +
+      (m.descripcion ? "<b>" + esc(m.descripcion) + "</b>" : "") +
+      (m.detalle ? (m.descripcion ? "<br>" : "") + esc(m.detalle).replace(/\n/g, "<br>") : (m.descripcion ? "" : "<span style=\"color:#777\">Sin detalle registrado</span>")) + "</p></div>" +
+    '<div class="po-sec"><h2>Monto</h2><table class="po-table"><thead><tr><th>Descripción</th><th class="r">Cantidad</th><th class="r">P. unitario</th><th class="r">Total neto</th></tr></thead><tbody>' +
+      "<tr><td>" + esc(m.descripcion || movLabel(m.tipo)) + '</td><td class="r">' + nfCant(m.cantidad) + '</td><td class="r">' + fmtCLP(m.precioUnit) + '</td><td class="r">' + fmtCLP(m.total) + "</td></tr>" +
+      '<tr class="po-tot"><td class="r" colspan="3">TOTAL A PAGAR</td><td class="r">' + fmtCLP(m.total) + "</td></tr>" +
+      "</tbody></table></div>" +
     '<div class="po-sign"><div>_____________________<br>V°B° Supervisor de flota</div><div>_____________________<br>Recepción Tesorería</div></div>' +
-    '<div class="po-gen">Generado: ' + fmtDateTime(Date.now()) + " · " + esc(co.app || "Bitácora de Camiones") + "</div>";
+    '<div class="po-gen">Orden ' + esc(o.otNumero || "") + " · " + esc(est.l) + " · Generado: " + fmtDateTime(Date.now()) + " · " + esc(co.app || "Bitácora de Camiones") + "</div>";
   document.body.appendChild(pa);
   const cleanup = () => { const p = document.getElementById("print-area"); if (p) p.remove(); window.removeEventListener("afterprint", cleanup); };
   window.addEventListener("afterprint", cleanup);
