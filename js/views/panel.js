@@ -578,6 +578,7 @@ async function orderDetail(view, ctx) {
     (o.detalle ? '<p style="margin:12px 0 0;font-size:.9rem;color:var(--ink-2)">' + esc(o.detalle) + "</p>" : "") +
     '<div class="meta-line" style="margin-top:8px;font-size:.8rem">Reportado por ' + esc(o.reportadoPor || "chofer") + " · " + fmtDateTime(o.createdAt) + "</div></div>" +
     '<button class="btn btn-soft section" id="o-print">' + I.doc + "Imprimir orden / Guardar PDF</button>" +
+    '<button class="btn btn-soft" style="margin-top:10px" id="o-print-fact">' + I.doc + "PDF de facturas (Tesorería)</button>" +
     descBanner +
     resumenCard +
     '<div class="card pad section"><label class="fld"><span class="lb">Estado</span><div class="chips">' + estChips + "</div></label>" +
@@ -603,6 +604,7 @@ async function orderDetail(view, ctx) {
   };
   $("#o-back", view).onclick = backFromOrder;
   const bpr = $("#o-print", view); if (bpr) bpr.onclick = () => printOrden(o, t);
+  const bpf = $("#o-print-fact", view); if (bpf) bpf.onclick = () => printFacturas(o, t);
   if (!editable || esDesc) return;
   const bd = $("#o-descartar", view); if (bd) bd.onclick = () => descartarOrden(ctx, o);
   $$("[data-est]", view).forEach(b => b.onclick = () => { syncOrder(view); d.estado = b.getAttribute("data-est"); orderDetail(view, ctx); });
@@ -795,6 +797,59 @@ async function printOrden(o, t) {
     ((o.novedades && o.novedades.length) ? '<div class="po-sec"><h2>Novedades / avance</h2>' +
       o.novedades.slice().sort((a, b) => (a.ts || 0) - (b.ts || 0)).map(n => '<p style="margin:0 0 4px"><b>' + fmtDate(n.ts) + "</b> " + esc(n.texto || "") + (n.por ? ' <span style="color:#555">(' + esc(n.por) + ")</span>" : "") + "</p>").join("") + "</div>" : "") +
     '<div class="po-sign"><div>_____________________<br>Responsable de taller</div><div>_____________________<br>Recibí conforme</div></div>' +
+    '<div class="po-gen">Generado: ' + fmtDateTime(Date.now()) + " · " + esc(co.app || "Bitácora de Camiones") + "</div>";
+  document.body.appendChild(pa);
+  const cleanup = () => { const p = document.getElementById("print-area"); if (p) p.remove(); window.removeEventListener("afterprint", cleanup); };
+  window.addEventListener("afterprint", cleanup);
+  setTimeout(() => { try { window.print(); } catch (e) {} setTimeout(cleanup, 2000); }, 80);
+}
+
+// PDF para Tesorería: detalle de los ítems de la orden que tienen una factura
+// (o documento) asociada, para respaldar el pago de las facturas de cada falla.
+async function printFacturas(o, t) {
+  const facturas = (o.movimientos || []).filter(m => (m.docto || "").trim());
+  if (!facturas.length) { toast("Esta orden no tiene facturas registradas (agrega compras/servicios con N° de documento)", "err"); return; }
+  let co = {}; try { co = await store.getCompany(); } catch (e) { co = {}; }
+  const old = document.getElementById("print-area"); if (old) old.remove();
+  const totalPagar = facturas.reduce((s, m) => s + (Number(m.total) || 0), 0);
+  const rows = facturas.slice().sort((a, b) => (a.fecha || 0) - (b.fecha || 0)).map(m =>
+    '<tr><td><b>' + esc(m.docto) + "</b></td><td>" + (m.fecha ? fmtDate(m.fecha) : "—") + "</td><td>" + esc(m.proveedor || "—") + "</td>" +
+    "<td>" + esc(movLabel(m.tipo)) + (m.descripcion ? ": " + esc(m.descripcion) : "") +
+    '<br><span style="color:#555">' + nfCant(m.cantidad) + " × " + fmtCLP(m.precioUnit) + "</span></td>" +
+    '<td class="r">' + fmtCLP(m.total) + "</td></tr>").join("");
+  const est = EST[o.estado] || { l: "" };
+  const coLine = [co.giro, co.rut ? "RUT " + co.rut : ""].filter(Boolean).join(" · ");
+  const coAddr = [co.direccion, co.comuna].filter(Boolean).join(", ");
+  const coContact = [co.fono ? "Tel: " + co.fono : "", co.email].filter(Boolean).join(" · ");
+  const field = (k, v) => '<div class="po-f"><span>' + esc(k) + "</span><b>" + esc(v || "—") + "</b></div>";
+  const pa = document.createElement("div");
+  pa.id = "print-area";
+  pa.innerHTML =
+    '<div class="po-head">' + (co.logo ? '<img class="po-logo" src="' + esc(co.logo) + '">' : "") +
+      '<div class="po-co"><h1>' + esc(co.nombre || "") + "</h1>" +
+        (coLine ? "<div>" + esc(coLine) + "</div>" : "") +
+        (coAddr ? "<div>" + esc(coAddr) + "</div>" : "") +
+        (coContact ? "<div>" + esc(coContact) + "</div>" : "") + "</div>" +
+      '<div class="po-doc"><div class="po-doc-t">FACTURAS A PAGO</div>' +
+        (o.otNumero ? '<div class="po-ot">' + esc(o.otNumero) + "</div>" : "") +
+        '<div class="po-est">' + esc(est.l) + "</div></div>" +
+    "</div>" +
+    '<div class="po-grid">' +
+      field("Camión", t.num + (t.marca ? " · " + t.marca + " " + (t.modelo || "") : "")) +
+      field("Patente", t.patente) +
+      field("Orden de taller", o.otNumero || "") +
+      field("Fecha de emisión", fmtDate(Date.now())) +
+      field("Taller", o.taller) +
+      field("Reportado por", o.reportadoPor || "") +
+    "</div>" +
+    '<div class="po-sec"><h2>Falla / motivo</h2><p>' + esc(o.titulo || "") + (o.detalle ? "<br>" + esc(o.detalle) : "") + "</p></div>" +
+    '<div class="po-sec"><h2>Facturas asociadas a esta falla</h2>' +
+      '<table class="po-table"><thead><tr><th>N° documento</th><th>Fecha</th><th>Proveedor</th><th>Detalle</th><th class="r">Monto</th></tr></thead><tbody>' +
+      rows +
+      '<tr class="po-tot"><td class="r" colspan="4">TOTAL A PAGAR</td><td class="r">' + fmtCLP(totalPagar) + "</td></tr>" +
+      "</tbody></table>" +
+      '<p style="margin:8px 0 0;font-size:11px;color:#555">Este reporte detalla únicamente los ítems con factura o documento asociado, para respaldar el pago por Tesorería. El costo total de la orden puede incluir además mano de obra u otros gastos sin documento.</p></div>' +
+    '<div class="po-sign"><div>_____________________<br>V°B° Supervisor de flota</div><div>_____________________<br>Recepción Tesorería</div></div>' +
     '<div class="po-gen">Generado: ' + fmtDateTime(Date.now()) + " · " + esc(co.app || "Bitácora de Camiones") + "</div>";
   document.body.appendChild(pa);
   const cleanup = () => { const p = document.getElementById("print-area"); if (p) p.remove(); window.removeEventListener("afterprint", cleanup); };
