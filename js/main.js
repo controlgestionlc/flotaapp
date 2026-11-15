@@ -11,6 +11,7 @@ import { renderCamiones } from "./views/camiones.js";
 import { renderChoferes } from "./views/choferes.js";
 import { renderUsuarios } from "./views/usuarios.js";
 import { renderReportes } from "./views/reportes.js";
+import { renderCostos } from "./views/costos.js";
 import { renderEmpresa } from "./views/empresa.js";
 import { renderResumen } from "./views/resumen.js";
 import { renderProductos } from "./views/productos.js";
@@ -65,6 +66,7 @@ function menuItems(p) {
   if (can(p, "plan.view")) items.push({ r: "climahist", l: "Historial de clima", ic: I.alert });
   if (can(p, "reserva.manage")) items.push({ r: "recepcion", l: "Recepción en planta", ic: I.pin });
   if (can(p, "reports.view")) items.push({ r: "reportes", l: "Indicadores", ic: I.chart });
+  if (can(p, "reports.view")) items.push({ r: "costos", l: "Costos de mantención", ic: I.wrench });
   if (can(p, "product.manage")) items.push({ r: "productos", l: "Productos", ic: I.route });
   if (can(p, "user.manage")) items.push({ r: "usuarios", l: "Usuarios", ic: I.users });
   if (can(p, "user.manage")) items.push({ r: "empresa", l: "Empresa", ic: I.gear });
@@ -150,6 +152,10 @@ async function routeTo(view) {
   if (r === "importar") {
     if (!can(p, "data.import")) { ctx.route = "home"; return renderPanel(view, ctx); }
     return renderImportar(view, ctx);
+  }
+  if (r === "costos") {
+    if (!can(p, "reports.view")) { ctx.route = "home"; return renderPanel(view, ctx); }
+    return renderCostos(view, ctx);
   }
   if (r === "reportes") {
     if (!can(p, "reports.view")) { ctx.route = "home"; return renderPanel(view, ctx); }

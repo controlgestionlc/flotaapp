@@ -198,6 +198,13 @@ a{color:var(--accent)}
 .kpi .stripe{position:absolute;left:0;top:0;bottom:0;width:4px}
 .kpi.g .stripe{background:var(--ok)} .kpi.w .stripe{background:var(--warn)} .kpi.c .stripe{background:var(--crit)} .kpi.a .stripe{background:var(--accent)}
 
+/* Tabla de costos de mantención (pantalla gerencial) */
+.cost-table{width:100%;border-collapse:collapse}
+.cost-table th,.cost-table td{padding:7px 9px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+.cost-table th{font-family:"Barlow Semi Condensed";font-weight:600;font-size:.74rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.cost-table th.r,.cost-table td.r{text-align:right}
+.cost-table tbody tr:last-child td{border-bottom:0}
+
 .row{display:flex;gap:12px;align-items:flex-start;padding:13px 14px;border-bottom:1px solid var(--line)}
 .row:last-child{border-bottom:0}
 .row .rl{flex:1;min-width:0}
