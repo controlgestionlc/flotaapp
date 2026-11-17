@@ -233,7 +233,7 @@ async function climaHistScreen(view, ctx) {
         '<td class="r"><b' + (riesgo ? ' style="color:var(--crit)"' : "") + ">" + lluvia + "</b></td>" +
         '<td class="r">' + (d.windKmh != null ? Math.round(d.windKmh) + "" : "—") + "</td>" +
         '<td class="r">' + (d.tmin != null ? Math.round(d.tmin) + "°" : "—") + " / " + (d.tmax != null ? Math.round(d.tmax) + "°" : "—") + "</td>" +
-        "<td>" + esc(w || "—") + "</td></tr>";
+        "<td>" + (w ? esc(w.e + " " + w.t) : "—") + "</td></tr>";
     }).join("");
     const totLluvia = dias.reduce((s, d) => s + (Number(d.precip24) || 0), 0);
     tabla = '<div style="overflow-x:auto"><table class="wd-table"><thead><tr><th>Día</th><th class="r">Lluvia</th><th class="r">Viento km/h</th><th class="r">Mín/Máx</th><th>Condición</th></tr></thead><tbody>' +
@@ -282,7 +282,7 @@ function printClimaHist(f) {
       '<td class="r">' + (d.precip24 != null ? d.precip24.toFixed(1) + " mm" : "—") + "</td>" +
       '<td class="r">' + (d.windKmh != null ? Math.round(d.windKmh) : "—") + "</td>" +
       '<td class="r">' + (d.tmin != null ? Math.round(d.tmin) + "°" : "—") + " / " + (d.tmax != null ? Math.round(d.tmax) + "°" : "—") + "</td>" +
-      "<td>" + esc(wmoDesc(d.code) || "—") + "</td></tr>";
+      "<td>" + esc(wmoDesc(d.code).t || "—") + "</td></tr>";
   }).join("");
   const tot = dias.reduce((s, d) => s + (Number(d.precip24) || 0), 0);
   const pa = document.createElement("div");
