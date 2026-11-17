@@ -1,6 +1,18 @@
 import { store } from "../store.js";
 import { ROLES, roleLabel, PERMISSIONS, allPerms, permsForRole } from "../permissions.js";
-import { I, esc, emptyBox, toast, $, $$ } from "../ui.js";
+import { I, esc, emptyBox, toast, $, $$, fmtDateTime, iconSpan } from "../ui.js";
+
+// "hace X" a partir de un timestamp.
+function haceTexto(ts) {
+  if (!ts) return "";
+  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (s < 60) return "recién";
+  const m = Math.floor(s / 60); if (m < 60) return "hace " + m + " min";
+  const h = Math.floor(m / 60); if (h < 24) return "hace " + h + " h";
+  const dd = Math.floor(h / 24); if (dd < 30) return "hace " + dd + (dd === 1 ? " día" : " días");
+  const mo = Math.floor(dd / 30); if (mo < 12) return "hace " + mo + (mo === 1 ? " mes" : " meses");
+  return "hace " + Math.floor(mo / 12) + " año(s)";
+}
 
 let form = null;
 
@@ -11,15 +23,21 @@ export async function renderUsuarios(view, ctx) {
 
 async function list(view, ctx) {
   const users = await store.listUsers();
+  const acc = await store.lastAccessByUser();
   const rows = users.length ? users.map(u => {
     const ini = (u.nombre || u.email || "?").trim().slice(0, 1).toUpperCase();
     const custom = Array.isArray(u.perms);
+    const la = acc[u.uid];
+    const accHtml = la
+      ? '<span class="meta-line" style="font-size:.76rem;display:inline-flex;align-items:center;gap:5px">' + iconSpan("history") + "Último acceso: " + esc(fmtDateTime(la.ts)) + " · " + esc(haceTexto(la.ts)) + "</span>"
+      : '<span class="meta-line" style="font-size:.76rem;opacity:.75">Sin acceso registrado</span>';
     return '<div class="row"><span class="avatar">' + esc(ini) + "</span>" +
       '<div class="rl"><div class="t">' + esc(u.nombre || "(sin nombre)") +
       ' <span class="pill steel">' + esc(roleLabel(u.role)) + "</span>" +
       (custom ? ' <span class="pill warn">Permisos propios</span>' : "") +
       (u.activo === false ? ' <span class="pill neutral">Inactivo</span>' : "") + "</div>" +
-      '<div class="m"><span>' + esc(u.email) + "</span></div></div>" +
+      '<div class="m"><span>' + esc(u.email) + "</span></div>" +
+      '<div class="m" style="margin-top:2px">' + accHtml + "</div></div>" +
       '<div style="display:flex;gap:6px"><button class="btn sm btn-soft" data-edit="' + esc(u.uid) + '">Editar</button>' +
       '<button class="btn sm btn-soft" data-toggle="' + esc(u.uid) + '" data-activo="' + (u.activo === false ? "0" : "1") + '">' +
       (u.activo === false ? "Activar" : "Desactivar") + "</button></div></div>";
