@@ -12,6 +12,7 @@ const tipoLabel = k => k === "correctiva" ? "Correctiva" : k === "preventiva" ? 
 const nf = (n, d) => (Number(n) || 0).toLocaleString("es-CL", { maximumFractionDigits: d || 0 });
 function oTotal(o) { return (o.movimientos || []).reduce((s, m) => s + (Number(m.total) || 0), 0) + (o.repuestos || []).reduce((s, x) => s + (Number(x.costo) || 0), 0) + (Number(o.manoObra) || 0) + (Number(o.otrosGastos) || 0); }
 function oCompras(o) { return (o.movimientos || []).reduce((s, m) => s + (Number(m.total) || 0), 0) + (o.repuestos || []).reduce((s, x) => s + (Number(x.costo) || 0), 0); }
+function sistemasDe(o) { return (o && o.sistemas && o.sistemas.length) ? o.sistemas : (o && o.sistema ? [o.sistema] : []); }
 
 const PERIODS = [["m", "Este mes"], ["q", "3 meses"], ["y", "12 meses"], ["all", "Todo"]];
 let period = "y";
@@ -72,7 +73,16 @@ export async function renderCostos(view, ctx) {
   const disp = Math.max(0, Math.min(100, Math.round((1 - diasFuera / (nEquipos * periodDays)) * 100)));
 
   // Gasto por sistema.
-  const porSis = {}; done.forEach(o => { const k = o.sistema || "sin"; porSis[k] = (porSis[k] || 0) + oTotal(o); });
+  // Gasto por sistema: cada movimiento se atribuye a su propio sistema (trazabilidad
+  // por factura). El resto (mano de obra, otros, compras sin sistema) va al sistema
+  // único de la orden, o a "Sin asignar" si la orden tiene varios.
+  const porSis = {};
+  done.forEach(o => {
+    const sisO = sistemasDe(o); const unico = sisO.length === 1 ? sisO[0] : "sin";
+    (o.movimientos || []).forEach(m => { const k = m.sistema || unico; porSis[k] = (porSis[k] || 0) + (Number(m.total) || 0); });
+    const resto = (Number(o.manoObra) || 0) + (Number(o.otrosGastos) || 0) + (o.repuestos || []).reduce((s, x) => s + (Number(x.costo) || 0), 0);
+    porSis[unico] = (porSis[unico] || 0) + resto;
+  });
   const sisRows = Object.entries(porSis).sort((a, b) => b[1] - a[1]);
   const maxSis = sisRows.reduce((m, r) => Math.max(m, r[1]), 0) || 1;
 
@@ -101,7 +111,7 @@ export async function renderCostos(view, ctx) {
 
   // Recurrencia: mismo sistema repetido en un equipo (histórico).
   const recMap = {};
-  doneAll.forEach(o => { if (!o.sistema) return; const k = o.truckId + "|" + o.sistema; recMap[k] = (recMap[k] || 0) + 1; });
+  doneAll.forEach(o => { sistemasDe(o).forEach(sis => { const k = o.truckId + "|" + sis; recMap[k] = (recMap[k] || 0) + 1; }); });
   const rec = Object.entries(recMap).filter(([, n]) => n >= 2).map(([k, n]) => { const [tid, sis] = k.split("|"); const t = trucks.find(x => x.id === tid); return { equipo: t ? nombre(t) : "?", sis: sisLabel(sis), n }; }).sort((a, b) => b.n - a.n).slice(0, 8);
 
   // ---- Render ----
@@ -187,7 +197,7 @@ function exportOrdenes(done, trucks) {
   done.slice().sort((a, b) => (a.completedAt || 0) - (b.completedAt || 0)).forEach(o => {
     const t = tm(o.truckId);
     const dias = (o.fechaEntradaTaller && o.fechaSalidaTaller) ? Math.round((o.fechaSalidaTaller - o.fechaEntradaTaller) / 86400000) : "";
-    rows.push([mesKey(o.completedAt), sd(o.completedAt), o.otNumero || "", t.num || "", t.patente || "", tipoLabel(o.tipoMant), sisLabel(o.sistema), o.taller || "",
+    rows.push([mesKey(o.completedAt), sd(o.completedAt), o.otNumero || "", t.num || "", t.patente || "", tipoLabel(o.tipoMant), sistemasDe(o).map(sisLabel).join(" / "), o.taller || "",
       sd(o.fechaEntradaTaller), sd(o.fechaSalidaTaller), dias, o.odometro || "", oComp(o), Number(o.manoObra) || 0, Number(o.otrosGastos) || 0, oTot(o)]);
   });
   download("costos_mantencion_ordenes.csv", toCSV(rows));
@@ -196,7 +206,7 @@ function exportFacturas(done, trucks) {
   const tm = id => (trucks.find(x => x.id === id) || {});
   const rows = [["Mes", "Equipo", "Patente", "OT", "Sistema", "Proveedor", "Documento", "Tipo", "Descripcion", "Detalle", "Cantidad", "Precio unitario", "Total", "Fecha documento"]];
   done.forEach(o => { const t = tm(o.truckId); (o.movimientos || []).forEach(m => {
-    rows.push([mesKey(o.completedAt), t.num || "", t.patente || "", o.otNumero || "", sisLabel(o.sistema), m.proveedor || "", m.docto || "", m.tipo || "", m.descripcion || "", m.detalle || "", Number(m.cantidad) || 0, Number(m.precioUnit) || 0, Number(m.total) || 0, sd(m.fecha)]);
+    rows.push([mesKey(o.completedAt), t.num || "", t.patente || "", o.otNumero || "", m.sistema ? sisLabel(m.sistema) : sistemasDe(o).map(sisLabel).join(" / "), m.proveedor || "", m.docto || "", m.tipo || "", m.descripcion || "", m.detalle || "", Number(m.cantidad) || 0, Number(m.precioUnit) || 0, Number(m.total) || 0, sd(m.fecha)]);
   }); });
   if (rows.length === 1) { toast("No hay compras con factura en el período", "err"); return; }
   download("costos_mantencion_facturas.csv", toCSV(rows));

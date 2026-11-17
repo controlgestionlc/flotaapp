@@ -26,13 +26,16 @@ const SISTEMAS = [
   ["refrigeracion", "Refrigeración"], ["estructura", "Estructura / carro"], ["otros", "Otros"]
 ];
 const sistemaLabel = k => (SISTEMAS.find(x => x[0] === k) || [, ""])[1];
+// Sistemas afectados de una orden (admite varios). Compatibilidad con el campo
+// antiguo "sistema" (único).
+function sistemasDeOrden(o) { return (o && o.sistemas && o.sistemas.length) ? o.sistemas : (o && o.sistema ? [o.sistema] : []); }
 
 // Qué falta para poder cerrar (completar) la orden. "" = se puede cerrar.
 function cierreFaltante(d) {
   if (d.estado !== "completado") return "";
   if (!String(d.trabajo || "").trim()) return "Escribe el trabajo realizado para poder cerrar.";
   if (!d.tipoMant) return "Elige el tipo de mantención (preventiva o correctiva) para cerrar.";
-  if (!d.sistema) return "Elige el sistema afectado para cerrar.";
+  if (!(d.sistemas && d.sistemas.length)) return "Marca al menos un sistema afectado para cerrar.";
   return "";
 }
 
@@ -404,11 +407,11 @@ export function createOrder(ctx, fid, fallas, truckId) {
   const f = fid ? (fallas || []).find(x => x.id === fid) : null;
   const tId = f ? f.truckId : truckId;
   if (!tId) return;
-  const st = { estado: "agendado", tipoMant: "correctiva" };
+  const st = { estado: "agendado", tipoMant: "correctiva", sistemas: [] };
   const estados = [["pendiente", "Pendiente"], ["agendado", "Agendado"], ["en_taller", "En taller"]];
   const estChips = estados.map(s => '<button class="chip' + (st.estado === s[0] ? " on" : "") + '" data-oe="' + s[0] + '">' + s[1] + "</button>").join("");
   const tmChipsN = TIPO_MANT.map(x => '<button class="chip' + (st.tipoMant === x[0] ? " on" : "") + '" data-om="' + x[0] + '">' + x[1] + "</button>").join("");
-  const sisOptsN = '<option value="">Sin especificar</option>' + SISTEMAS.map(x => '<option value="' + x[0] + '">' + x[1] + "</option>").join("");
+  const sisChipsN = SISTEMAS.map(x => '<button class="chip" data-os="' + x[0] + '">' + x[1] + "</button>").join("");
   openSheet("Nueva orden de taller",
     (f ? '<p class="meta-line" style="margin:0 0 12px;font-size:.82rem">Basada en la falla reportada' + (f.driver ? " por " + esc(f.driver) : "") + ". Puedes ajustar los datos.</p>" : "") +
     '<label class="fld"><span class="lb">Problema / título</span><input class="input" id="no-tit" placeholder="Ej: Cambio de pastillas de freno" value="' + esc(f ? f.titulo : "") + '"></label>' +
@@ -419,13 +422,14 @@ export function createOrder(ctx, fid, fallas, truckId) {
     '<label class="fld"><span class="lb">Costo estimado</span><input class="input num" id="no-estim" inputmode="numeric" placeholder="$"></label>' +
     '<label class="fld"><span class="lb">Fecha estimada de entrega</span><input class="input" type="date" id="no-entrega"></label>' +
     '<label class="fld"><span class="lb">Tipo de mantención</span><div class="chips" id="no-tm">' + tmChipsN + "</div></label>" +
-    '<label class="fld"><span class="lb">Sistema afectado</span><select class="input" id="no-sistema">' + sisOptsN + "</select></label>" +
+    '<label class="fld"><span class="lb">Sistemas afectados (marca uno o más)</span><div class="chips" id="no-sis">' + sisChipsN + "</div></label>" +
     '<label class="fld"><span class="lb">Odómetro al ingreso (km)</span><input class="input num" id="no-odom" inputmode="numeric" placeholder="km"></label>' +
     '<p class="meta-line" style="font-size:.78rem;margin:0 0 12px">Estado <b>En taller</b> deja el camión fuera de servicio. El tipo y el sistema se pueden ajustar después; son obligatorios al cerrar.</p>' +
     '<button class="btn btn-primary" id="no-ok" style="width:100%">' + I.check + "Crear orden</button>",
     () => {
       $$("#no-est [data-oe]").forEach(b => b.onclick = () => { st.estado = b.getAttribute("data-oe"); $$("#no-est [data-oe]").forEach(x => x.classList.remove("on")); b.classList.add("on"); });
       $$("#no-tm [data-om]").forEach(b => b.onclick = () => { st.tipoMant = b.getAttribute("data-om"); $$("#no-tm [data-om]").forEach(x => x.classList.remove("on")); b.classList.add("on"); });
+      $$("#no-sis [data-os]").forEach(b => b.onclick = () => { const k = b.getAttribute("data-os"); const i = st.sistemas.indexOf(k); if (i >= 0) { st.sistemas.splice(i, 1); b.classList.remove("on"); } else { st.sistemas.push(k); b.classList.add("on"); } });
       $("#no-ok").onclick = async () => {
         const titulo = ($("#no-tit").value || "").trim();
         if (!titulo) { toast("Escribe el problema o título", "err"); return; }
@@ -444,7 +448,7 @@ export function createOrder(ctx, fid, fallas, truckId) {
           fechaAgendada: fecha ? new Date(fecha + "T12:00:00").getTime() : null,
           costoEstimado: Math.round(Number($("#no-estim").value) || 0),
           fechaEntregaEstimada: entrega ? new Date(entrega + "T12:00:00").getTime() : null,
-          tipoMant: st.tipoMant || null, sistema: ($("#no-sistema").value || "") || null,
+          tipoMant: st.tipoMant || null, sistemas: st.sistemas.slice(), sistema: st.sistemas[0] || null,
           odometro: Math.round(Number(soloNum($("#no-odom").value)) || 0) || null,
           trabajo: "", repuestos: [], manoObra: 0, createdBy: ctx.profile.uid, createdAt: Date.now(), completedAt: null
         };
@@ -531,7 +535,7 @@ async function orderDetail(view, ctx) {
     __id: o.id,
     estado: o.estado, taller: o.taller || "", fecha: o.fechaAgendada ? dInput(o.fechaAgendada) : "",
     estim: soloNum(o.costoEstimado), entrega: o.fechaEntregaEstimada ? dInput(o.fechaEntregaEstimada) : "",
-    tipoMant: o.tipoMant || "", sistema: o.sistema || "", odometro: soloNum(o.odometro),
+    tipoMant: o.tipoMant || "", sistemas: sistemasDeOrden(o).slice(), odometro: soloNum(o.odometro),
     entradaTaller: o.fechaEntradaTaller ? dInput(o.fechaEntradaTaller) : "", salidaTaller: o.fechaSalidaTaller ? dInput(o.fechaSalidaTaller) : "",
     trabajo: o.trabajo || "", manoObra: soloNum(o.manoObra), otrosGastos: soloNum(o.otrosGastos),
     repuestos: (o.repuestos || []).map(r => ({ desc: r.desc, costo: soloNum(r.costo) })),
@@ -546,7 +550,7 @@ async function orderDetail(view, ctx) {
   const needTrabajo = !!cierreFaltante(d);
   const esDesc = o.estado === "descartada";
   const tmChips = TIPO_MANT.map(x => '<button class="chip' + (d.tipoMant === x[0] ? " on" : "") + '" data-tm="' + x[0] + '"' + (editable ? "" : " disabled") + ">" + x[1] + "</button>").join("");
-  const sisOpts = '<option value="">Sin especificar</option>' + SISTEMAS.map(x => '<option value="' + x[0] + '"' + (d.sistema === x[0] ? " selected" : "") + ">" + x[1] + "</option>").join("");
+  const sisChips = SISTEMAS.map(x => '<button class="chip' + ((d.sistemas || []).includes(x[0]) ? " on" : "") + '" data-sis="' + x[0] + '"' + (editable ? "" : " disabled") + ">" + x[1] + "</button>").join("");
   // Acumulados de costo de la orden.
   const accCompras = d.movimientos.reduce((s, m) => s + (Number(m.total) || 0), 0) + d.repuestos.reduce((s, r) => s + (Number(r.costo) || 0), 0);
   const accMano = Number(d.manoObra) || 0, accOtros = Number(d.otrosGastos) || 0;
@@ -555,7 +559,7 @@ async function orderDetail(view, ctx) {
   // Filas de la bitácora de compras/fletes/servicios.
   const movRows = d.movimientos.map((m, i) =>
     '<div class="row"' + (canEdit ? ' data-mov="' + i + '" style="cursor:pointer"' : '') + '>' +
-    '<div class="rl"><div class="t">' + esc(m.descripcion || movLabel(m.tipo)) + ' <span class="pill neutral">' + esc(movLabel(m.tipo)) + "</span></div>" +
+    '<div class="rl"><div class="t">' + esc(m.descripcion || movLabel(m.tipo)) + ' <span class="pill neutral">' + esc(movLabel(m.tipo)) + "</span>" + (m.sistema ? ' <span class="pill accent" style="font-size:.66rem">' + esc(sistemaLabel(m.sistema)) + "</span>" : "") + "</div>" +
     '<div class="m">' + (m.docto ? "<span>Doc " + esc(m.docto) + "</span>" : "") + (m.proveedor ? "<span>" + esc(m.proveedor) + "</span>" : "") + (m.fecha ? "<span>" + fmtDate(m.fecha) + "</span>" : "") +
     "<span>" + nfCant(m.cantidad) + " × " + fmtCLP(m.precioUnit) + "</span></div></div>" +
     '<b class="num">' + fmtCLP(m.total) + "</b>" +
@@ -619,7 +623,7 @@ async function orderDetail(view, ctx) {
     '<label class="fld" style="margin-bottom:0"><span class="lb">Fecha estimada de entrega</span><input class="input" type="date" id="o-entrega" value="' + esc(d.entrega) + '"' + (editable ? "" : " disabled") + "></label></div>" +
     '<div class="card pad section"><span class="eyebrow" style="display:block;margin-bottom:12px">Clasificación y taller (para informes de costos)</span>' +
       '<label class="fld"><span class="lb">Tipo de mantención</span><div class="chips" id="o-tipomant">' + tmChips + "</div></label>" +
-      '<label class="fld"><span class="lb">Sistema afectado</span><select class="input" id="o-sistema"' + (editable ? "" : " disabled") + ">" + sisOpts + "</select></label>" +
+      '<label class="fld"><span class="lb">Sistemas afectados (marca uno o más)</span><div class="chips" id="o-sistemas">' + sisChips + "</div></label>" +
       '<label class="fld"><span class="lb">Odómetro al ingreso (km)</span><input class="input num" id="o-odom" inputmode="numeric" placeholder="km" value="' + esc(miles(d.odometro)) + '"' + (editable ? "" : " disabled") + "></label>" +
       '<div class="grid2"><label class="fld" style="margin:0"><span class="lb">Entrada a taller</span><input class="input" type="date" id="o-entrada" value="' + esc(d.entradaTaller) + '"' + (editable ? "" : " disabled") + "></label>" +
       '<label class="fld" style="margin:0"><span class="lb">Salida de taller</span><input class="input" type="date" id="o-salida" value="' + esc(d.salidaTaller) + '"' + (editable ? "" : " disabled") + "></label></div></div>" +
@@ -670,7 +674,7 @@ async function orderDetail(view, ctx) {
   const entrega = $("#o-entrega", view); if (entrega) entrega.onchange = () => { d.entrega = entrega.value; };
   const entrada = $("#o-entrada", view); if (entrada) entrada.onchange = () => { d.entradaTaller = entrada.value; };
   const salida = $("#o-salida", view); if (salida) salida.onchange = () => { d.salidaTaller = salida.value; };
-  const sisSel = $("#o-sistema", view); if (sisSel) sisSel.onchange = () => { d.sistema = sisSel.value; updateSaveState(); };
+  $$("[data-sis]", view).forEach(b => b.onclick = () => { const k = b.getAttribute("data-sis"); syncOrder(view); d.sistemas = d.sistemas || []; const i = d.sistemas.indexOf(k); if (i >= 0) d.sistemas.splice(i, 1); else d.sistemas.push(k); orderDetail(view, ctx); });
   $$("[data-tm]", view).forEach(b => b.onclick = () => { const k = b.getAttribute("data-tm"); syncOrder(view); d.tipoMant = (d.tipoMant === k ? "" : k); orderDetail(view, ctx); });
   // Bitácora de compras/fletes/servicios.
   const amv = $("#o-addmov", view); if (amv) amv.onclick = () => { syncOrder(view); movForm(ctx, view, o, d, null); };
@@ -698,7 +702,7 @@ function buildOrderPatch(o, d) {
   const movimientos = (d.movimientos || []).map(m => ({
     id: m.id || ("mv_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)),
     tipo: m.tipo || "otro", docto: (m.docto || "").trim(), fecha: m.fecha || null,
-    proveedor: (m.proveedor || "").trim(), descripcion: (m.descripcion || "").trim(), detalle: (m.detalle || "").trim(),
+    proveedor: (m.proveedor || "").trim(), descripcion: (m.descripcion || "").trim(), detalle: (m.detalle || "").trim(), sistema: (m.sistema || "") || null,
     precioUnit: Math.round(Number(m.precioUnit) || 0), cantidad: Number(m.cantidad) || 0,
     total: Math.round((Number(m.precioUnit) || 0) * (Number(m.cantidad) || 0))
   }));
@@ -710,7 +714,7 @@ function buildOrderPatch(o, d) {
     fechaEntregaEstimada: d.entrega ? new Date(d.entrega + "T12:00:00").getTime() : null,
     trabajo: String(d.trabajo || "").trim(), repuestos: reps,
     manoObra: Math.round(Number(d.manoObra) || 0), otrosGastos: Math.round(Number(d.otrosGastos) || 0),
-    tipoMant: d.tipoMant || null, sistema: d.sistema || null, odometro: Math.round(Number(d.odometro) || 0) || null,
+    tipoMant: d.tipoMant || null, sistemas: (d.sistemas || []).slice(), sistema: (d.sistemas && d.sistemas[0]) || null, odometro: Math.round(Number(d.odometro) || 0) || null,
     fechaEntradaTaller: d.entradaTaller ? new Date(d.entradaTaller + "T12:00:00").getTime() : null,
     fechaSalidaTaller: d.salidaTaller ? new Date(d.salidaTaller + "T12:00:00").getTime() : (d.estado === "completado" ? (o.fechaSalidaTaller || Date.now()) : null),
     movimientos, novedades,
@@ -730,10 +734,14 @@ function movForm(ctx, view, o, d, idx) {
   const st = {
     tipo: src.tipo || "repuesto", docto: src.docto || "",
     fecha: src.fecha ? dInput(src.fecha) : dInput(Date.now()),
-    proveedor: src.proveedor || "", descripcion: src.descripcion || "", detalle: src.detalle || "",
+    proveedor: src.proveedor || "", descripcion: src.descripcion || "", detalle: src.detalle || "", sistema: src.sistema || "",
     precioUnit: soloNum(src.precioUnit), cantidad: src.cantidad != null && src.cantidad !== "" ? nfCant(src.cantidad) : "1"
   };
   const tipoChips = MOV_TIPOS.map(x => '<button class="chip' + (st.tipo === x[0] ? " on" : "") + '" data-mt="' + x[0] + '">' + x[1] + "</button>").join("");
+  const ordSis = d.sistemas || [];
+  const sisBlock = ordSis.length
+    ? '<label class="fld"><span class="lb">¿A qué sistema corresponde?</span><div class="chips" id="mv-sis">' + ordSis.map(k => '<button class="chip' + (st.sistema === k ? " on" : "") + '" data-ms="' + k + '">' + esc(sistemaLabel(k)) + "</button>").join("") + "</div></label>"
+    : '<p class="meta-line" style="font-size:.78rem;margin:-4px 2px 10px">Para asignar este gasto a un sistema, primero marca los sistemas afectados en la orden.</p>';
   const liveTotal = () => fmtCLP((Number(soloNum(($("#mv-precio") || {}).value || st.precioUnit)) || 0) * parseCant(($("#mv-cant") || {}).value || st.cantidad));
   openSheet(idx != null ? "Editar compra / servicio" : "Agregar compra / servicio",
     '<label class="fld"><span class="lb">Tipo</span><div class="chips" id="mv-tipo">' + tipoChips + "</div></label>" +
@@ -742,6 +750,7 @@ function movForm(ctx, view, o, d, idx) {
     '<label class="fld"><span class="lb">Proveedor</span><input class="input" id="mv-prov" placeholder="Nombre del proveedor" value="' + esc(st.proveedor) + '"></label>' +
     '<label class="fld"><span class="lb">Descripción (nombre corto)</span><input class="input" id="mv-desc" placeholder="Ej: Kit de embrague / Rectificación" value="' + esc(st.descripcion) + '"></label>' +
     '<label class="fld"><span class="lb">Detalle de lo comprado / servicio realizado</span><textarea class="input" id="mv-detalle" placeholder="Qué se compró o qué trabajo se hizo según este documento...">' + esc(st.detalle) + "</textarea></label>" +
+    sisBlock +
     '<div class="rep-row" style="gap:10px">' +
     '<label class="fld" style="flex:1;margin:0"><span class="lb">Precio unitario</span><input class="input num" id="mv-precio" inputmode="numeric" placeholder="$" value="' + esc(miles(st.precioUnit)) + '"></label>' +
     '<label class="fld" style="width:96px;margin:0"><span class="lb">Cantidad</span><input class="input num" id="mv-cant" inputmode="decimal" placeholder="1" value="' + esc(st.cantidad) + '"></label></div>' +
@@ -749,6 +758,7 @@ function movForm(ctx, view, o, d, idx) {
     '<button class="btn btn-primary" id="mv-ok" style="width:100%;margin-top:6px">' + I.check + (idx != null ? "Guardar cambios" : "Agregar") + "</button>",
     () => {
       $$("#mv-tipo [data-mt]").forEach(b => b.onclick = () => { st.tipo = b.getAttribute("data-mt"); $$("#mv-tipo [data-mt]").forEach(x => x.classList.remove("on")); b.classList.add("on"); });
+      $$("#mv-sis [data-ms]").forEach(b => b.onclick = () => { const k = b.getAttribute("data-ms"); st.sistema = (st.sistema === k ? "" : k); $$("#mv-sis [data-ms]").forEach(x => x.classList.remove("on")); if (st.sistema) b.classList.add("on"); });
       const recalcMv = () => { const el = $("#mv-total"); if (el) el.textContent = liveTotal(); };
       const pe = $("#mv-precio"); if (pe) pe.oninput = () => { pe.value = miles(soloNum(pe.value)); recalcMv(); };
       const ce = $("#mv-cant"); if (ce) ce.oninput = recalcMv;
@@ -762,7 +772,7 @@ function movForm(ctx, view, o, d, idx) {
           id: (idx != null && d.movimientos[idx] && d.movimientos[idx].id) ? d.movimientos[idx].id : ("mv_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)),
           tipo: st.tipo, docto: ($("#mv-docto").value || "").trim(),
           fecha: fv ? new Date(fv + "T12:00:00").getTime() : null,
-          proveedor: ($("#mv-prov").value || "").trim(), descripcion, detalle: ($("#mv-detalle").value || "").trim(),
+          proveedor: ($("#mv-prov").value || "").trim(), descripcion, detalle: ($("#mv-detalle").value || "").trim(), sistema: st.sistema || null,
           precioUnit: Math.round(precioUnit), cantidad, total: Math.round(precioUnit * cantidad)
         };
         if (idx != null) d.movimientos[idx] = mov; else d.movimientos.push(mov);
@@ -832,7 +842,7 @@ async function printOrden(o, t) {
       field("Entrega estimada", o.fechaEntregaEstimada ? fmtDate(o.fechaEntregaEstimada) : "") +
       field("Costo estimado", o.costoEstimado ? fmtCLP(o.costoEstimado) : "") +
       field("Tipo de mantención", tipoMantLabel(o.tipoMant)) +
-      field("Sistema", sistemaLabel(o.sistema)) +
+      field("Sistemas", sistemasDeOrden(o).map(sistemaLabel).join(", ")) +
       field("Odómetro ingreso", o.odometro ? Number(o.odometro).toLocaleString("es-CL") + " km" : "") +
       field("Entrada / salida taller", (o.fechaEntradaTaller ? fmtDate(o.fechaEntradaTaller) : "—") + " / " + (o.fechaSalidaTaller ? fmtDate(o.fechaSalidaTaller) : "—")) +
     "</div>" +
@@ -884,6 +894,7 @@ async function printFactura(o, t, m) {
       field("N° documento", m.docto) +
       field("Fecha documento", m.fecha ? fmtDate(m.fecha) : "") +
       field("Tipo", movLabel(m.tipo)) +
+      (m.sistema ? field("Sistema", sistemaLabel(m.sistema)) : "") +
       field("Camión", t.num + (t.marca ? " · " + t.marca + " " + (t.modelo || "") : "")) +
       field("Patente", t.patente) +
       field("Orden de taller", o.otNumero || "") +
@@ -948,6 +959,5 @@ function syncOrder(view) {
   const od = g("#o-odom"); if (od !== undefined) d.odometro = soloNum(od);
   const ten = g("#o-entrada"); if (ten !== undefined) d.entradaTaller = ten;
   const tsa = g("#o-salida"); if (tsa !== undefined) d.salidaTaller = tsa;
-  const sis = g("#o-sistema"); if (sis !== undefined) d.sistema = sis;
   $$("[data-rep]", view).forEach(inp => { const i = +inp.getAttribute("data-rep"), f = inp.getAttribute("data-f"); if (d.repuestos[i]) d.repuestos[i][f] = f === "costo" ? soloNum(inp.value) : inp.value; });
 }

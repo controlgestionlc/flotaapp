@@ -26,13 +26,17 @@ function metrosDiaFaena(f) {
   const sem = Number(f.metrosSemana) || 0; const dias = Number(f.diasSemana) || 6;
   return sem > 0 ? Math.round(sem / dias) : 0;
 }
+// Especies y plantas de destino de una faena (soporta valor único antiguo o lista nueva).
+function faenaEspecies(f) { return (f && f.especies && f.especies.length) ? f.especies : (f && f.tipoMadera ? [f.tipoMadera] : []); }
+function faenaDestinos(f) { return (f && f.destinos && f.destinos.length) ? f.destinos : (f && f.destino ? [f.destino] : []); }
 // Metros despachados (viajes cerrados) de una faena dentro de la semana.
 function despachoSemana(faena, trips, wk) {
   const lo = wk.inicio, hi = wk.fin + 86400000;
+  const dests = faenaDestinos(faena);
   return (trips || []).filter(t => {
     const ts = t.salida || t.ts; if (ts < lo || ts >= hi) return false;
     if (t.estado && t.estado !== "cerrado") return false;
-    return t.faenaId === faena.id || (t.faena && t.faena === faena.nombre) || (faena.destino && t.plantaDestino === faena.destino);
+    return t.faenaId === faena.id || (t.faena && t.faena === faena.nombre) || (t.plantaDestino && dests.includes(t.plantaDestino));
   }).reduce((s, t) => s + (Number(t.volumen) || 0), 0);
 }
 // Paleta estable para identificar faenas en la matriz.
@@ -1227,7 +1231,7 @@ async function faenaForm(view, ctx, id) {
   const f = id ? (await store.getFaena(id)) || {} : {};
   const d = {
     nombre: f.nombre || "", ubicacion: f.ubicacion || "", comuna: f.comuna || "", lat: f.lat != null ? f.lat : "", lng: f.lng != null ? f.lng : "",
-    tipoMadera: f.tipoMadera || "", unidad: f.unidad || "M3", destino: f.destino || "",
+    especies: faenaEspecies(f).slice(), destinos: faenaDestinos(f).slice(), unidad: f.unidad || "M3",
     distancia: f.distancia || "", tiempoCiclo: f.tiempoCiclo || "", capacidadDia: f.capacidadDia || "", objetivoDia: f.objetivoDia || "",
     metrosSemana: f.metrosSemana || "", diasSemana: f.diasSemana || 6,
     estadoAcceso: f.estadoAcceso || "operativa", restricciones: f.restricciones || "", activa: f.activa !== false
@@ -1246,8 +1250,13 @@ async function faenaForm(view, ctx, id) {
       '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:-2px 0 6px"><button type="button" class="btn sm btn-soft" id="ff-geo">' + I.pin + "Buscar por comuna</button>" +
       '<button type="button" class="btn sm btn-soft" id="ff-gps">' + I.pin + "Usar mi ubicación</button></div>" +
       '<p class="meta-line" style="font-size:.76rem;margin:0 2px 12px">Coordenadas para consultar el clima. Búscalas por comuna, usa tu GPS en terreno, o cópialas desde Google Maps (clic derecho sobre el punto).</p>' +
-      '<div class="grid2"><label class="fld"><span class="lb">Tipo de madera</span><input class="input" id="ff-mad" value="' + esc(d.tipoMadera) + '"></label>' +
-      '<label class="fld"><span class="lb">Destino</span><input class="input" id="ff-dest" value="' + esc(d.destino) + '"></label></div>' +
+      '<label class="fld"><span class="lb">Especies / tipo de madera (una o más)</span>' +
+        '<div class="chips" id="ff-mad-chips" style="margin-bottom:6px"></div>' +
+        '<div style="display:flex;gap:8px"><input class="input" id="ff-mad-in" placeholder="Ej: Pino aserrable"><button type="button" class="btn sm btn-soft" id="ff-mad-add">Agregar</button></div></label>' +
+      '<label class="fld"><span class="lb">Plantas de destino (una o más)</span>' +
+        '<div class="chips" id="ff-dest-chips" style="margin-bottom:6px"></div>' +
+        '<div style="display:flex;gap:8px"><input class="input" id="ff-dest-in" placeholder="Ej: Aserradero Mininco"><button type="button" class="btn sm btn-soft" id="ff-dest-add">Agregar</button></div></label>' +
+      '<p class="meta-line" style="font-size:.76rem;margin:-4px 2px 12px">Escribe y pulsa Enter o Agregar. Puedes cargar varias especies y varias plantas cuando el contrato lo requiere.</p>' +
       '<div class="grid2"><label class="fld"><span class="lb">Distancia (km)</span><input class="input num" id="ff-dist" inputmode="numeric" value="' + esc(d.distancia) + '"></label>' +
       '<label class="fld"><span class="lb">Tiempo ciclo (min)</span><input class="input num" id="ff-ciclo" inputmode="numeric" value="' + esc(d.tiempoCiclo) + '"></label></div>' +
       '<label class="fld"><span class="lb">Unidad de carga</span><select class="input" id="ff-unidad"><option value="M3"' + (d.unidad === "M3" ? " selected" : "") + '>M3 (20 por viaje)</option><option value="MR"' + (d.unidad === "MR" ? " selected" : "") + ">MR (18 por viaje)</option></select></label>" +
@@ -1262,6 +1271,27 @@ async function faenaForm(view, ctx, id) {
     '<div class="formbar"><button class="btn btn-primary" id="ff-save">' + I.check + "Guardar faena</button></div>";
   $("#ff-back", view).onclick = () => ctx.go("faenas", {});
   $$("#ff-acc [data-acc]", view).forEach(b => b.onclick = () => { d.estadoAcceso = b.getAttribute("data-acc"); $$("#ff-acc [data-acc]", view).forEach(x => x.classList.remove("on")); b.classList.add("on"); });
+  // Editores de etiquetas (especies y plantas de destino)
+  const renderTags = (wrapId, arr) => {
+    const w = $(wrapId, view); if (!w) return;
+    w.innerHTML = arr.length
+      ? arr.map((t, i) => '<span class="chip on" data-tag="' + i + '">' + esc(t) + ' <b data-del="' + i + '" style="cursor:pointer;margin-left:2px;font-weight:700">×</b></span>').join("")
+      : '<span class="meta-line" style="font-size:.76rem">Nada agregado aún</span>';
+    $$("[data-del]", w).forEach(b => b.onclick = () => { arr.splice(Number(b.getAttribute("data-del")), 1); renderTags(wrapId, arr); });
+  };
+  const wireTag = (inId, addId, wrapId, arr) => {
+    const add = () => {
+      const el = $(inId, view); if (!el) return;
+      (el.value || "").split(",").map(s => s.trim()).filter(Boolean).forEach(x => { if (!arr.some(a => a.toLowerCase() === x.toLowerCase())) arr.push(x); });
+      el.value = ""; renderTags(wrapId, arr); el.focus();
+    };
+    const inp = $(inId, view); if (inp) inp.onkeydown = e => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); add(); } };
+    const btn = $(addId, view); if (btn) btn.onclick = add;
+  };
+  renderTags("#ff-mad-chips", d.especies);
+  renderTags("#ff-dest-chips", d.destinos);
+  wireTag("#ff-mad-in", "#ff-mad-add", "#ff-mad-chips", d.especies);
+  wireTag("#ff-dest-in", "#ff-dest-add", "#ff-dest-chips", d.destinos);
   const updMdia = () => { const o = $("#ff-mdia-out", view); if (o) o.textContent = mdia(); };
   const msem = $("#ff-msem", view); if (msem) msem.oninput = updMdia;
   const dsem = $("#ff-dsem", view); if (dsem) dsem.oninput = updMdia;
@@ -1290,10 +1320,14 @@ async function faenaForm(view, ctx, id) {
   $("#ff-save", view).onclick = async () => {
     const g = i => { const el = $(i, view); return el ? el.value : ""; };
     const parseCoord = v => { const n = Number(String(v).trim()); return isFinite(n) && String(v).trim() !== "" ? n : null; };
+    // Incorpora texto escrito en los campos que no se alcanzó a "Agregar"
+    const flush = (inId, arr) => { (g(inId) || "").split(",").map(s => s.trim()).filter(Boolean).forEach(x => { if (!arr.some(a => a.toLowerCase() === x.toLowerCase())) arr.push(x); }); };
+    flush("#ff-mad-in", d.especies); flush("#ff-dest-in", d.destinos);
     const rec = {
       nombre: g("#ff-nombre").trim(), ubicacion: g("#ff-ubi").trim(), comuna: g("#ff-comuna").trim(),
       lat: parseCoord(g("#ff-lat")), lng: parseCoord(g("#ff-lng")),
-      tipoMadera: g("#ff-mad").trim(), unidad: g("#ff-unidad") || "M3", destino: g("#ff-dest").trim(),
+      especies: d.especies.slice(), destinos: d.destinos.slice(),
+      tipoMadera: d.especies.join(" / "), unidad: g("#ff-unidad") || "M3", destino: d.destinos.join(" / "),
       distancia: Number(g("#ff-dist")) || 0, tiempoCiclo: Number(g("#ff-ciclo")) || 0, capacidadDia: Number(g("#ff-cap")) || 0, objetivoDia: Number(g("#ff-obj")) || 0,
       metrosSemana: Number(g("#ff-msem")) || 0, diasSemana: Number(g("#ff-dsem")) || 6,
       estadoAcceso: d.estadoAcceso, restricciones: g("#ff-restr").trim(), activa: true,
