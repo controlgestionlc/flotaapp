@@ -91,7 +91,13 @@ function demoAdapter() {
       { id: "tr2", truckId: "t2", uid: "u_chofer", deviceId: "seed", driverNombre: "José Muñoz", estado: "cerrado", origen: "Camino Santa Ana", predio: "Santa Ana", producto: { codigo: "3232", descripcion: "MR EUCALYPTUS GLOBULUS 3,50 C/C", especie: "EUCALYPTUS", um: "MR" }, volumen: 28, unidad: "MR", guiaDespacho: "GD-45233", salida: now - 1*D, salidaGps: null, plantaDestino: "Planta Collipulli", llegada: now - 1*D + 2*H, llegadaGps: null, gmm: "GMM-8851", ts: now - 1*D }
     ];
     const products = PRODUCTS_BASE.map((p, i) => ({ id: "pr" + (i + 1), codigo: p.codigo, descripcion: p.descripcion, especie: p.especie, um: p.um }));
-    const devices = [];
+    const devices = [
+      { id: "dev_admin", deviceId: "dev_admin", ultimoUid: "u_admin", ultimoUso: now - 20 * 60 * 1000, userAgent: "Chrome / Windows" },
+      { id: "dev_super", deviceId: "dev_super", ultimoUid: "u_super", ultimoUso: now - 3 * H, userAgent: "Chrome / Android" },
+      { id: "dev_ger",   deviceId: "dev_ger",   ultimoUid: "u_ger",   ultimoUso: now - 1 * D, userAgent: "Safari / iPhone" },
+      { id: "dev_chofer",deviceId: "dev_chofer",ultimoUid: "u_chofer",ultimoUso: now - 5 * H, userAgent: "Chrome / Android" },
+      { id: "dev_chofer2",deviceId: "dev_chofer2",ultimoUid: "u_chofer2",ultimoUso: now - 9 * D, userAgent: "Chrome / Android" }
+    ];
     const config = [{ id: "empresa", nombre: "Transportes La Cabaña", app: "Bitácora de Camiones", logo: "" }];
 
     // --- Planificación de flota (demo) ---
@@ -303,6 +309,8 @@ export const store = {
     this.mode = A.mode;
     const uid = A.currentUid();
     if (uid) { try { PROFILE = await A.profile(uid); } catch (e) { PROFILE = null; } }
+    // Registra la visita al reabrir con sesión recordada (último acceso).
+    if (PROFILE) { this.touchDevice(); }
     return this.mode;
   },
 
@@ -326,6 +334,19 @@ export const store = {
         userAgent: navigator.userAgent
       });
     } catch (e) { /* dispositivos es best-effort */ }
+  },
+
+  // Último acceso por usuario (uid -> {ts, deviceId, userAgent}), tomado de /devices.
+  async lastAccessByUser() {
+    const map = {};
+    let devs = [];
+    try { devs = await A.list("devices"); } catch (e) { return map; }
+    (devs || []).forEach(d => {
+      const uid = d.ultimoUid, ts = Number(d.ultimoUso) || 0;
+      if (!uid || !ts) return;
+      if (!map[uid] || ts > map[uid].ts) map[uid] = { ts, deviceId: d.deviceId || d.id, userAgent: d.userAgent || "" };
+    });
+    return map;
   },
 
   // --- empresa (branding editable) ---
