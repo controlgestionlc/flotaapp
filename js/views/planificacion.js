@@ -28,11 +28,19 @@ function metrosDiaFaena(f) {
 }
 // Especies y plantas de destino de una faena (soporta valor único antiguo o lista nueva).
 function faenaEspecies(f) { return (f && f.especies && f.especies.length) ? f.especies : (f && f.tipoMadera ? [f.tipoMadera] : []); }
-function faenaDestinos(f) { return (f && f.destinos && f.destinos.length) ? f.destinos : (f && f.destino ? [f.destino] : []); }
+// Destinos como lista de { nombre, km }. Acepta formatos previos: lista de strings (v1.4.8) o destino único + distancia.
+function faenaDestinos(f) {
+  if (f && Array.isArray(f.destinos) && f.destinos.length) {
+    return f.destinos.map(x => typeof x === "string" ? { nombre: x, km: 0 } : { nombre: (x && x.nombre) || "", km: Number(x && x.km) || 0 }).filter(x => x.nombre);
+  }
+  if (f && f.destino) return [{ nombre: f.destino, km: Number(f.distancia) || 0 }];
+  return [];
+}
+function faenaDestNombres(f) { return faenaDestinos(f).map(x => x.nombre).filter(Boolean); }
 // Metros despachados (viajes cerrados) de una faena dentro de la semana.
 function despachoSemana(faena, trips, wk) {
   const lo = wk.inicio, hi = wk.fin + 86400000;
-  const dests = faenaDestinos(faena);
+  const dests = faenaDestNombres(faena);
   return (trips || []).filter(t => {
     const ts = t.salida || t.ts; if (ts < lo || ts >= hi) return false;
     if (t.estado && t.estado !== "cerrado") return false;
@@ -1216,7 +1224,7 @@ async function faenasScreen(view, ctx) {
     const ac = faenaAccess(f);
     return '<div class="row" data-fa="' + f.id + '" style="cursor:pointer"><span class="sev-stripe ' + (ac.cls === "crit" ? "sev-alta" : ac.cls === "warn" ? "sev-media" : "sev-baja") + '"></span>' +
       '<div class="rl"><div class="t">' + esc(f.nombre) + ' <span class="pill ' + ac.cls + '"><span class="dot"></span>' + ac.label + "</span></div>" +
-      '<div class="m"><span>' + esc([f.ubicacion, f.comuna].filter(Boolean).join(", ")) + "</span>" + (f.destino ? "<span>→ " + esc(f.destino) + "</span>" : "") + (f.capacidadDia ? "<span>" + f.capacidadDia + " v./día</span>" : "") + "</div></div><span class='arrow'>" + I.arrow + "</span></div>";
+      '<div class="m"><span>' + esc([f.ubicacion, f.comuna].filter(Boolean).join(", ")) + "</span>" + (faenaDestinos(f).length ? "<span>→ " + esc(faenaDestinos(f).map(x => x.nombre + (x.km ? " (" + x.km + " km)" : "")).join(", ")) + "</span>" : "") + (f.capacidadDia ? "<span>" + f.capacidadDia + " v./día</span>" : "") + "</div></div><span class='arrow'>" + I.arrow + "</span></div>";
   }).join("") : emptyBox("No hay faenas registradas");
   view.innerHTML =
     '<button class="backlink" id="fa-back">' + I.back + " Planificación</button>" +
@@ -1231,8 +1239,8 @@ async function faenaForm(view, ctx, id) {
   const f = id ? (await store.getFaena(id)) || {} : {};
   const d = {
     nombre: f.nombre || "", ubicacion: f.ubicacion || "", comuna: f.comuna || "", lat: f.lat != null ? f.lat : "", lng: f.lng != null ? f.lng : "",
-    especies: faenaEspecies(f).slice(), destinos: faenaDestinos(f).slice(), unidad: f.unidad || "M3",
-    distancia: f.distancia || "", tiempoCiclo: f.tiempoCiclo || "", capacidadDia: f.capacidadDia || "", objetivoDia: f.objetivoDia || "",
+    especies: faenaEspecies(f).slice(), destinos: faenaDestinos(f), unidad: f.unidad || "M3",
+    tiempoCiclo: f.tiempoCiclo || "", capacidadDia: f.capacidadDia || "", objetivoDia: f.objetivoDia || "",
     metrosSemana: f.metrosSemana || "", diasSemana: f.diasSemana || 6,
     estadoAcceso: f.estadoAcceso || "operativa", restricciones: f.restricciones || "", activa: f.activa !== false
   };
@@ -1253,12 +1261,11 @@ async function faenaForm(view, ctx, id) {
       '<label class="fld"><span class="lb">Especies / tipo de madera (una o más)</span>' +
         '<div class="chips" id="ff-mad-chips" style="margin-bottom:6px"></div>' +
         '<div style="display:flex;gap:8px"><input class="input" id="ff-mad-in" placeholder="Ej: Pino aserrable"><button type="button" class="btn sm btn-soft" id="ff-mad-add">Agregar</button></div></label>' +
-      '<label class="fld"><span class="lb">Plantas de destino (una o más)</span>' +
-        '<div class="chips" id="ff-dest-chips" style="margin-bottom:6px"></div>' +
-        '<div style="display:flex;gap:8px"><input class="input" id="ff-dest-in" placeholder="Ej: Aserradero Mininco"><button type="button" class="btn sm btn-soft" id="ff-dest-add">Agregar</button></div></label>' +
-      '<p class="meta-line" style="font-size:.76rem;margin:-4px 2px 12px">Escribe y pulsa Enter o Agregar. Puedes cargar varias especies y varias plantas cuando el contrato lo requiere.</p>' +
-      '<div class="grid2"><label class="fld"><span class="lb">Distancia (km)</span><input class="input num" id="ff-dist" inputmode="numeric" value="' + esc(d.distancia) + '"></label>' +
-      '<label class="fld"><span class="lb">Tiempo ciclo (min)</span><input class="input num" id="ff-ciclo" inputmode="numeric" value="' + esc(d.tiempoCiclo) + '"></label></div>' +
+      '<label class="fld"><span class="lb">Plantas de destino y distancia (una o más)</span>' +
+        '<div id="ff-dest-list" style="margin-bottom:6px"></div>' +
+        '<div style="display:flex;gap:8px"><input class="input" id="ff-dest-in" placeholder="Planta / aserradero" style="flex:2;min-width:0"><input class="input num" id="ff-dest-km" inputmode="numeric" placeholder="km" style="flex:1;min-width:0;max-width:92px"><button type="button" class="btn sm btn-soft" id="ff-dest-add">Agregar</button></div></label>' +
+      '<p class="meta-line" style="font-size:.76rem;margin:-4px 2px 12px">Escribe el nombre de la planta y su distancia en km, y pulsa Agregar. Cada planta puede tener su propia distancia; puedes editar los km de cada una en la lista.</p>' +
+      '<label class="fld"><span class="lb">Tiempo ciclo (min)</span><input class="input num" id="ff-ciclo" inputmode="numeric" value="' + esc(d.tiempoCiclo) + '"></label>' +
       '<label class="fld"><span class="lb">Unidad de carga</span><select class="input" id="ff-unidad"><option value="M3"' + (d.unidad === "M3" ? " selected" : "") + '>M3 (20 por viaje)</option><option value="MR"' + (d.unidad === "MR" ? " selected" : "") + ">MR (18 por viaje)</option></select></label>" +
       '<div class="grid2"><label class="fld"><span class="lb">Objetivo semanal (metros)</span><input class="input num" id="ff-msem" inputmode="numeric" value="' + esc(d.metrosSemana) + '"></label>' +
       '<label class="fld"><span class="lb">Días de operación/semana</span><input class="input num" id="ff-dsem" inputmode="numeric" value="' + esc(d.diasSemana) + '"></label></div>' +
@@ -1289,9 +1296,34 @@ async function faenaForm(view, ctx, id) {
     const btn = $(addId, view); if (btn) btn.onclick = add;
   };
   renderTags("#ff-mad-chips", d.especies);
-  renderTags("#ff-dest-chips", d.destinos);
   wireTag("#ff-mad-in", "#ff-mad-add", "#ff-mad-chips", d.especies);
-  wireTag("#ff-dest-in", "#ff-dest-add", "#ff-dest-chips", d.destinos);
+  // Editor de plantas de destino con distancia (km) por planta
+  const renderDest = () => {
+    const w = $("#ff-dest-list", view); if (!w) return;
+    w.innerHTML = d.destinos.length
+      ? d.destinos.map((x, i) =>
+          '<div class="row" style="padding:8px 10px;gap:8px;align-items:center;margin-bottom:6px">' +
+            '<div class="rl" style="min-width:0"><div class="t" style="font-size:.9rem;white-space:normal">' + esc(x.nombre) + "</div></div>" +
+            '<div style="display:flex;align-items:center;gap:5px;flex:none">' +
+              '<input class="input num" data-km="' + i + '" inputmode="numeric" value="' + esc(x.km || "") + '" placeholder="km" style="width:64px;text-align:right;padding:6px 8px">' +
+              '<span class="meta-line" style="font-size:.72rem">km</span>' +
+              '<button type="button" class="btn sm btn-soft" data-del="' + i + '" style="padding:4px 9px;font-weight:700">×</button>' +
+            "</div></div>").join("")
+      : '<span class="meta-line" style="font-size:.76rem">Sin plantas agregadas</span>';
+    $$("[data-km]", w).forEach(inp => inp.oninput = () => { const i = Number(inp.getAttribute("data-km")); if (d.destinos[i]) d.destinos[i].km = Number(inp.value) || 0; });
+    $$("[data-del]", w).forEach(b => b.onclick = () => { d.destinos.splice(Number(b.getAttribute("data-del")), 1); renderDest(); });
+  };
+  const addDest = () => {
+    const nin = $("#ff-dest-in", view), kin = $("#ff-dest-km", view); if (!nin) return;
+    const nombre = (nin.value || "").trim(); if (!nombre) return;
+    const km = Number(kin ? kin.value : 0) || 0;
+    if (!d.destinos.some(x => x.nombre.toLowerCase() === nombre.toLowerCase())) d.destinos.push({ nombre, km });
+    nin.value = ""; if (kin) kin.value = ""; renderDest(); nin.focus();
+  };
+  renderDest();
+  const dIn = $("#ff-dest-in", view); if (dIn) dIn.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); addDest(); } };
+  const dKm = $("#ff-dest-km", view); if (dKm) dKm.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); addDest(); } };
+  const dAdd = $("#ff-dest-add", view); if (dAdd) dAdd.onclick = addDest;
   const updMdia = () => { const o = $("#ff-mdia-out", view); if (o) o.textContent = mdia(); };
   const msem = $("#ff-msem", view); if (msem) msem.oninput = updMdia;
   const dsem = $("#ff-dsem", view); if (dsem) dsem.oninput = updMdia;
@@ -1320,15 +1352,17 @@ async function faenaForm(view, ctx, id) {
   $("#ff-save", view).onclick = async () => {
     const g = i => { const el = $(i, view); return el ? el.value : ""; };
     const parseCoord = v => { const n = Number(String(v).trim()); return isFinite(n) && String(v).trim() !== "" ? n : null; };
-    // Incorpora texto escrito en los campos que no se alcanzó a "Agregar"
-    const flush = (inId, arr) => { (g(inId) || "").split(",").map(s => s.trim()).filter(Boolean).forEach(x => { if (!arr.some(a => a.toLowerCase() === x.toLowerCase())) arr.push(x); }); };
-    flush("#ff-mad-in", d.especies); flush("#ff-dest-in", d.destinos);
+    // Incorpora lo escrito y no agregado: especies (texto) y una planta de destino pendiente (nombre + km).
+    (g("#ff-mad-in") || "").split(",").map(s => s.trim()).filter(Boolean).forEach(x => { if (!d.especies.some(a => a.toLowerCase() === x.toLowerCase())) d.especies.push(x); });
+    const pendDest = (g("#ff-dest-in") || "").trim();
+    if (pendDest && !d.destinos.some(x => x.nombre.toLowerCase() === pendDest.toLowerCase())) d.destinos.push({ nombre: pendDest, km: Number(g("#ff-dest-km")) || 0 });
+    const destinos = d.destinos.map(x => ({ nombre: x.nombre, km: Number(x.km) || 0 }));
     const rec = {
       nombre: g("#ff-nombre").trim(), ubicacion: g("#ff-ubi").trim(), comuna: g("#ff-comuna").trim(),
       lat: parseCoord(g("#ff-lat")), lng: parseCoord(g("#ff-lng")),
-      especies: d.especies.slice(), destinos: d.destinos.slice(),
-      tipoMadera: d.especies.join(" / "), unidad: g("#ff-unidad") || "M3", destino: d.destinos.join(" / "),
-      distancia: Number(g("#ff-dist")) || 0, tiempoCiclo: Number(g("#ff-ciclo")) || 0, capacidadDia: Number(g("#ff-cap")) || 0, objetivoDia: Number(g("#ff-obj")) || 0,
+      especies: d.especies.slice(), destinos: destinos,
+      tipoMadera: d.especies.join(" / "), unidad: g("#ff-unidad") || "M3", destino: destinos.map(x => x.nombre).join(" / "),
+      distancia: destinos.length ? destinos[0].km : 0, tiempoCiclo: Number(g("#ff-ciclo")) || 0, capacidadDia: Number(g("#ff-cap")) || 0, objetivoDia: Number(g("#ff-obj")) || 0,
       metrosSemana: Number(g("#ff-msem")) || 0, diasSemana: Number(g("#ff-dsem")) || 6,
       estadoAcceso: d.estadoAcceso, restricciones: g("#ff-restr").trim(), activa: true,
       clima: f.clima || null, createdAt: f.createdAt || Date.now()
