@@ -189,6 +189,7 @@ a{color:var(--accent)}
 .pill.crit{background:var(--crit-soft);color:var(--crit)}
 .pill.neutral{background:var(--surface-2);color:var(--muted)}
 .pill.steel{background:var(--accent-soft);color:var(--accent)}
+.pill.accent{background:var(--accent-soft);color:var(--accent)}
 
 .kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:13px 14px;box-shadow:var(--shadow);position:relative;overflow:hidden}
